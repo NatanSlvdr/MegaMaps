@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { runInNewContext } from "node:vm";
 
-test("generated service worker serves cold offline navigation, worker JS, and codec WASM", async () => {
+test("generated service worker serves cold offline navigation, worker JS, and codec WASM without redirects", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "map-viewer-sw-"));
   try {
     await mkdir(path.join(root, "dist/assets"), { recursive: true });
@@ -30,7 +30,10 @@ test("generated service worker serves cold offline navigation, worker JS, and co
     const listeners = new Map<string, (event: unknown) => void>();
     const stores = new Map<string, Map<string, Response>>();
     let network = 0,
-      claimed = false;
+      online = true,
+      claimed = false,
+      skipped = false;
+    const fetched: string[] = [];
     const caches = {
       async open(name: string) {
         let data = stores.get(name);
@@ -39,11 +42,9 @@ test("generated service worker serves cold offline navigation, worker JS, and co
           stores.set(name, data);
         }
         return {
-          async addAll(urls: string[]) {
-            for (const url of urls) {
-              assert.ok(url in assets);
-              data!.set(url, new Response(assets[url as keyof typeof assets]));
-            }
+          async put(url: string, response: Response) {
+            assert.ok(url in assets);
+            data!.set(url, response);
           },
           async match(url: string) {
             return data!.get(url)?.clone();
@@ -60,12 +61,24 @@ test("generated service worker serves cold offline navigation, worker JS, and co
     runInNewContext(script, {
       caches,
       URL,
-      fetch: () => {
+      Response,
+      // Like Cloudflare assets: /index.html redirects to /, which serves the shell.
+      fetch: async (url: string) => {
         network++;
-        throw new Error("Offline");
+        if (!online) throw new Error("Offline");
+        fetched.push(url);
+        assert.notEqual(url, "/index.html", "the shell is fetched from /");
+        const body = url === "/" ? assets["/index.html"] : assets[url as keyof typeof assets];
+        assert.ok(body !== undefined, url);
+        const response = new Response(body);
+        if (url === "/") Object.defineProperty(response, "redirected", { value: true });
+        return response;
       },
       self: {
         location: { origin: "https://map.local" },
+        async skipWaiting() {
+          skipped = true;
+        },
         clients: {
           async claim() {
             claimed = true;
@@ -85,8 +98,16 @@ test("generated service worker serves cold offline navigation, worker JS, and co
       await done;
     }
     await lifecycle("install");
+    assert.equal(skipped, true);
+    assert.equal(fetched.length, Object.keys(assets).length);
     await lifecycle("activate");
     assert.equal(claimed, true);
+    online = false;
+    network = 0;
+    // An older worker may still hold a redirected shell: it must be cleaned.
+    const redirected = new Response(assets["/index.html"]);
+    Object.defineProperty(redirected, "redirected", { value: true });
+    stores.values().next().value!.set("/index.html", redirected);
     async function request(url: string, mode: string) {
       let response: Promise<Response> | undefined;
       listeners.get("fetch")!({
@@ -96,7 +117,10 @@ test("generated service worker serves cold offline navigation, worker JS, and co
         },
       });
       assert.ok(response);
-      return (await response!).text();
+      const result = await response!;
+      // Safari refuses navigations answered with a redirected response.
+      assert.equal(result.redirected, false, url);
+      return result.text();
     }
     assert.equal(
       await request("/?cold-start", "navigate"),
