@@ -410,7 +410,7 @@ export class ViewerControls {
         !window.matchMedia("(display-mode: standalone)").matches
       ) {
         this.deviceLocked = false;
-        this.el("device-orientation").textContent = "Lock screen orientation";
+        this.el("device-orientation").textContent = "Lock";
       }
     });
     this.click("touch-lock", () => {
@@ -585,7 +585,7 @@ export class ViewerControls {
         return;
       }
       this.deviceLocked = false;
-      this.el("device-orientation").textContent = "Lock screen orientation";
+      this.el("device-orientation").textContent = "Lock";
       this.el("orientation-message").textContent =
         "Screen orientation unlocked.";
       return;
@@ -602,9 +602,7 @@ export class ViewerControls {
       }
       this.deviceLocked = result.locked;
       this.ownsFullscreen ||= result.enteredFullscreen;
-      button.textContent = result.locked
-        ? "Unlock screen orientation"
-        : "Lock screen orientation";
+      button.textContent = result.locked ? "Unlock" : "Lock";
       this.el("orientation-message").textContent = result.message;
     } finally {
       button.disabled = false;
@@ -677,8 +675,8 @@ export class ViewerControls {
     this.el("tool-center-label").textContent = action;
     this.el("route-undo").hidden = this.tool !== "route";
     this.el<HTMLButtonElement>("route-undo").disabled = !count;
-    this.el("tool-done").textContent =
-      this.tool === "route" ? (count >= 2 ? "Done" : "Cancel") : "Cancel";
+    this.el("tool-done-label").textContent =
+      this.tool === "route" && count >= 2 ? "Done" : "Cancel";
     this.el("tool-done").classList.toggle(
       "ready",
       this.tool === "route" && count >= 2,
@@ -796,6 +794,8 @@ export class ViewerControls {
       ...sheets.map((sheet) => `open-${sheet}`),
     ])
       this.el<HTMLButtonElement | HTMLInputElement>(id).disabled = locked;
+    // Fine rotation only appears once twisting is unlocked.
+    this.el("rotation-controls").hidden = this.state.rotationLocked;
     for (const id of ["rotation-angle", "rotate-left", "rotate-right"])
       this.el<HTMLInputElement | HTMLButtonElement>(id).disabled =
         this.state.rotationLocked || locked;

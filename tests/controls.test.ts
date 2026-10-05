@@ -110,7 +110,7 @@ test("viewer controls: sheets, smart dark, layers, highlight, places, checkpoint
     assert.equal(sheet.hidden, false);
     assert.equal(el("sheet-more").hidden, false);
     assert.equal(el("sheet-add").hidden, true);
-    assert.equal(el("sheet-title").textContent, "More");
+    assert.equal(el("sheet-title").textContent, "Settings");
     assert.equal(el("open-more").getAttribute("aria-expanded"), "true");
     assert.equal(dock.hidden, true);
     // Fit lives here, not on the main controls.
@@ -118,7 +118,7 @@ test("viewer controls: sheets, smart dark, layers, highlight, places, checkpoint
     assert.equal(fitted, 1);
     assert.equal(sheet.hidden, true);
     click("open-display");
-    assert.equal(el("sheet-title").textContent, "Map display");
+    assert.equal(el("sheet-title").textContent, "View");
     click("open-display");
     assert.equal(sheet.hidden, true);
     click("open-saved");
@@ -129,7 +129,7 @@ test("viewer controls: sheets, smart dark, layers, highlight, places, checkpoint
     click("sheet-dismiss");
     assert.equal(sheet.hidden, true);
 
-    // Smart dark mode is on by default and set from Map display.
+    // Smart dark mode is on by default and set from View.
     assert.equal(state.inverted, true);
     assert.equal((el("dark-map") as HTMLInputElement).checked, true);
     controls.options().onAppearance?.({
@@ -163,9 +163,11 @@ test("viewer controls: sheets, smart dark, layers, highlight, places, checkpoint
     key(root, "Escape");
     assert.equal(root.dataset.tool, "browse");
 
-    // Rotation buttons follow the lock.
+    // Fine rotation only appears (and works) once twisting is unlocked.
     assert.equal((el("rotate-left") as HTMLButtonElement).disabled, true);
+    assert.equal(el("rotation-controls").hidden, true);
     check("rotation-lock", false);
+    assert.equal(el("rotation-controls").hidden, false);
     click("rotate-right");
     assert.ok(Math.abs(rotation - Math.PI / 12) < 1e-9);
 
@@ -237,6 +239,7 @@ test("viewer controls: sheets, smart dark, layers, highlight, places, checkpoint
     tap(900, 1000);
     tap(1500, 1700);
     assert.equal(el("tool-done").classList.contains("ready"), true);
+    assert.equal(el("tool-done").textContent, "Done");
     click("route-undo");
     assert.equal(state.routes[0]?.points.length, 1);
     assert.equal(el("tool-done").textContent, "Cancel");

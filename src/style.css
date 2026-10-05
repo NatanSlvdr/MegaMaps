@@ -450,7 +450,11 @@ dialog textarea {
   outline-offset: 2px;
 }
 
-/* ---------- Viewer ---------- */
+/* ---------- Viewer: glass HUD ---------- */
+/* The map runs edge to edge. Controls float above it as small translucent
+   pills, grouped by intent: top = where am I (back, title, lock); right rail =
+   move around; dock = look (View, Highlight) · create (+) · yours (Saved,
+   Settings). */
 .viewing {
   overflow: hidden;
   overscroll-behavior: none;
@@ -464,6 +468,18 @@ dialog textarea {
   font-size: 15px;
   user-select: none;
   -webkit-user-select: none;
+  --edge-l: max(10px, env(safe-area-inset-left));
+  --edge-r: max(10px, env(safe-area-inset-right));
+  --hud-top: max(10px, calc(env(safe-area-inset-top) + 2px));
+  /* Sits just above the home indicator instead of a full safe-area gap. */
+  --hud-bottom: max(12px, calc(env(safe-area-inset-bottom) - 10px));
+  --dock-h: 64px;
+  --tool-h: 112px;
+  --glass: rgb(26 28 33 / 0.55);
+  --glass-strong: rgb(22 24 29 / 0.8);
+  --glass-line: rgb(255 255 255 / 0.13);
+  --fill: rgb(255 255 255 / 0.07);
+  --fill-strong: rgb(255 255 255 / 0.13);
 }
 .viewer canvas {
   width: 100%;
@@ -495,67 +511,58 @@ dialog textarea {
   overflow: hidden;
   transition: filter 0.4s;
 }
-/* Bars are pinned to the screen edges with the safe areas inside them, so no
-   strip of map is wasted under the bottom bar. On wide screens their content
-   stays in a centered, thumb-sized column. */
-.viewer {
-  --bar-pad: max(6px, calc(env(safe-area-inset-bottom) - 14px));
-  --dock-h: calc(63px + var(--bar-pad));
-  --tool-h: calc(95px + var(--bar-pad));
-  --top-h: calc(57px + env(safe-area-inset-top));
+.glass {
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(20px) saturate(1.8);
+  backdrop-filter: blur(20px) saturate(1.8);
+  border: 1px solid var(--glass-line);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.35);
 }
-.viewer-top,
-.dock,
-.tool-bar,
-.touch-locked {
+.viewer .glass button:active:not(:disabled),
+button.glass:active:not(:disabled) {
+  background-color: var(--fill-strong);
+}
+
+/* Top: back · title · lock */
+.hud-top {
   position: absolute;
   z-index: 2;
-  left: 0;
-  right: 0;
-  padding-left: max(8px, env(safe-area-inset-left), calc((100% - 560px) / 2));
-  padding-right: max(8px, env(safe-area-inset-right), calc((100% - 560px) / 2));
-  background: #0b0d10f2;
-  -webkit-backdrop-filter: blur(16px);
-  backdrop-filter: blur(16px);
-}
-.dock,
-.tool-bar,
-.touch-locked {
-  bottom: 0;
-  padding-top: 6px;
-  padding-bottom: var(--bar-pad);
-  border-top: 1px solid var(--line);
-}
-.viewer-top {
-  top: 0;
+  top: var(--hud-top);
+  left: var(--edge-l);
+  right: var(--edge-r);
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding-top: calc(4px + env(safe-area-inset-top));
-  padding-bottom: 4px;
-  border-bottom: 1px solid var(--line);
+  gap: 8px;
+  pointer-events: none;
 }
-.viewer-icon-button {
+.hud-top > * {
+  pointer-events: auto;
+}
+.hud-round {
   display: grid;
   place-items: center;
   width: 48px;
   height: 48px;
   padding: 0;
   flex-shrink: 0;
-  border-radius: 14px;
-  background: none;
+  border-radius: 50%;
 }
-.viewer-icon-button svg {
+.hud-round svg {
   width: 22px;
   height: 22px;
 }
-.viewer-heading {
-  flex: 1;
+.hud-title {
   min-width: 0;
+  max-width: 420px;
+  height: 48px;
+  margin: 0 auto;
+  padding: 0 18px;
+  border-radius: 24px;
   display: flex;
   flex-direction: column;
+  justify-content: center;
   align-items: center;
-  line-height: 1.25;
+  line-height: 1.2;
 }
 #viewer-title {
   max-width: 100%;
@@ -570,22 +577,17 @@ dialog textarea {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
-#touch-lock[aria-pressed="true"] {
-  color: var(--accent);
-}
 .toast {
   position: absolute;
-  top: calc(var(--top-h) + 10px);
+  top: calc(var(--hud-top) + 58px);
   left: 50%;
   transform: translateX(-50%);
   max-width: calc(100% - 32px);
   width: max-content;
   margin: 0;
-  padding: 10px 16px;
+  padding: 10px 18px;
   border-radius: 99px;
-  background: #1a1d21f2;
-  border: 1px solid var(--line);
-  box-shadow: 0 6px 24px #0008;
+  background: var(--glass-strong);
   font-size: 14px;
   text-align: center;
   z-index: 6;
@@ -598,12 +600,13 @@ dialog textarea {
     transform: translate(-50%, -6px);
   }
 }
-/* Map rail: right edge, just above whichever bottom bar is showing. */
+
+/* Right rail: compass (only when rotated) above position + zoom. */
 .map-rail {
   position: absolute;
   z-index: 2;
-  right: max(10px, env(safe-area-inset-right));
-  bottom: calc(var(--dock-h) + 14px);
+  right: var(--edge-r);
+  bottom: calc(var(--hud-bottom) + var(--dock-h) + 14px);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -611,25 +614,11 @@ dialog textarea {
   transition: bottom 0.2s ease;
 }
 .viewer[data-tool]:not([data-tool="browse"]) .map-rail {
-  bottom: calc(var(--tool-h) + 14px);
+  bottom: calc(var(--hud-bottom) + var(--tool-h) + 14px);
 }
-.rail-single,
-.rail-group {
-  background: #0d0f12eb;
-  border: 1px solid var(--line);
-  box-shadow: 0 6px 24px #0008;
-  -webkit-backdrop-filter: blur(14px);
-  backdrop-filter: blur(14px);
-}
-.rail-single {
-  display: grid;
-  place-items: center;
+#compass {
   width: 52px;
   height: 52px;
-  border-radius: 50%;
-}
-.rail-single.unset {
-  color: var(--muted);
 }
 #compass svg {
   width: 28px;
@@ -645,64 +634,81 @@ dialog textarea {
   display: grid;
   place-items: center;
   width: 52px;
-  height: 56px;
+  height: 52px;
   background: none;
 }
 .rail-group button + button {
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--glass-line);
 }
-.dock {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  align-items: end;
-  gap: 2px;
+#locate {
+  color: #d2b3ff;
 }
-.dock button {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  min-height: 56px;
-  padding: 4px 2px;
-  border-radius: 14px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  background: none;
+#locate.unset {
   color: var(--muted);
 }
-.dock button svg {
+
+/* Dock: [View · Highlight]  (+)  [Saved · Settings] */
+.dock {
+  position: absolute;
+  z-index: 2;
+  left: var(--edge-l);
+  right: var(--edge-r);
+  bottom: var(--hud-bottom);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  pointer-events: none;
+}
+.dock > * {
+  pointer-events: auto;
+}
+.dock-group {
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 32px;
+}
+.dock-group button {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 52px;
+  padding: 0;
+  border-radius: 26px;
+  background: none;
+}
+.dock-group svg {
   width: 25px;
   height: 25px;
-}
-.dock button[aria-expanded="true"] {
-  color: var(--text);
 }
 #spotlight svg {
   color: #ffe27a;
 }
 #spotlight.active {
-  color: var(--text);
-  background: #ffe27a1f;
+  background: rgb(255 226 122 / 0.22);
 }
-/* Add is a raised button that breaks the bar's top edge. */
-.dock .dock-add svg {
-  width: 58px;
-  height: 58px;
-  margin-top: -24px;
-  padding: 15px;
+.dock-add {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  padding: 0;
   border-radius: 50%;
   background: var(--accent);
   color: var(--accent-ink);
-  stroke-width: 2.4;
   box-shadow:
-    0 0 0 5px #0b0d10,
-    0 8px 22px #a6e38f38;
+    inset 0 0 0 1px rgb(255 255 255 / 0.35),
+    0 10px 28px rgb(166 227 143 / 0.32);
+}
+.dock-add svg {
+  width: 30px;
+  height: 30px;
+  stroke-width: 2.4;
 }
 .viewer-error {
   position: absolute;
-  bottom: calc(var(--dock-h) + 16px);
+  bottom: calc(var(--hud-bottom) + var(--dock-h) + 16px);
   left: 16px;
   right: 80px;
   text-align: center;
@@ -710,7 +716,7 @@ dialog textarea {
   line-height: 1.5;
   color: #ffd4c0;
   background: #34201aee;
-  border-radius: 14px;
+  border-radius: 18px;
   padding: 12px;
   max-width: 500px;
   margin: auto;
@@ -720,39 +726,51 @@ dialog textarea {
 
 /* ---------- Placement / route drawing ---------- */
 .tool-bar {
-  padding-top: 10px;
+  position: absolute;
+  z-index: 2;
+  left: var(--edge-l);
+  right: var(--edge-r);
+  bottom: var(--hud-bottom);
+  max-width: 480px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
 }
-.tool-info {
-  margin: 0 6px 8px;
+.tool-bar > * {
+  pointer-events: auto;
+}
+.tool-hint {
+  max-width: 100%;
+  margin: 0;
+  padding: 9px 16px;
+  border-radius: 20px;
   font-size: 14px;
   line-height: 20px;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  color: #c9ced4;
+  text-align: center;
 }
-.tool-info strong {
+.tool-hint strong {
   color: var(--text);
   font-weight: 650;
+  margin-right: 6px;
 }
-/* Done stays left, away from the thumb's resting spot; the big action is central. */
+/* Cancel/Done stays left, away from the thumb's resting spot. */
 .tool-actions {
-  display: grid;
-  grid-template-columns: 1fr 1.7fr 1fr;
-  gap: 8px;
-}
-.tool-actions:has(.tool-undo[hidden]) {
-  grid-template-columns: 1fr 2fr;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 .tool-actions button {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-height: 56px;
-  padding: 8px;
-  border-radius: 16px;
-  background: var(--control);
+  height: 60px;
+  border-radius: 30px;
   font-size: 15px;
   font-weight: 600;
 }
@@ -760,19 +778,41 @@ dialog textarea {
   width: 20px;
   height: 20px;
 }
-.tool-actions .tool-primary {
+.tool-done {
+  flex-shrink: 0;
+  padding: 0 18px 0 14px;
+}
+.tool-done span {
+  display: flex;
+}
+.tool-done .if-done,
+.tool-done.ready .if-cancel {
+  display: none;
+}
+.tool-done.ready .if-done {
+  display: flex;
+}
+.tool-done.ready {
+  background: #fff;
+  color: #000;
+}
+.tool-primary {
+  flex: 1;
+  min-width: 0;
   background: var(--accent);
   color: var(--accent-ink);
   font-size: 16px;
+  box-shadow: 0 10px 28px rgb(166 227 143 / 0.28);
 }
 .tool-actions .tool-primary svg {
   width: 22px;
   height: 22px;
   stroke-width: 2.4;
 }
-.tool-actions .tool-done.ready {
-  background: #fff;
-  color: #000;
+.tool-undo {
+  flex-shrink: 0;
+  width: 60px;
+  padding: 0;
 }
 .placement-center {
   position: absolute;
@@ -817,41 +857,47 @@ dialog textarea {
 
 /* ---------- Touch lock ---------- */
 .touch-locked {
+  position: absolute;
+  z-index: 2;
+  left: var(--edge-l);
+  right: var(--edge-r);
+  bottom: var(--hud-bottom);
+  max-width: 420px;
+  margin: 0 auto;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
-  padding-top: 8px;
+  padding: 6px 6px 6px 16px;
+  border-radius: 34px;
 }
-.touch-locked > div {
-  margin-left: 8px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.locked-icon {
+  display: grid;
+  color: var(--accent);
+}
+.locked-icon svg {
+  width: 22px;
+  height: 22px;
+}
+.touch-locked > span {
+  flex: 1;
   font-size: 15px;
   font-weight: 600;
 }
-.touch-locked svg {
-  width: 22px;
-  height: 22px;
-  color: var(--accent);
-}
 .touch-locked small {
   display: block;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 400;
   color: var(--muted);
-  margin-top: 2px;
 }
 .touch-locked button {
   position: relative;
   isolation: isolate;
   overflow: hidden;
   flex-shrink: 0;
-  min-height: 54px;
-  padding: 12px 18px;
-  background: var(--control);
-  border-radius: 16px;
+  height: 54px;
+  padding: 0 20px;
+  border-radius: 27px;
+  background: var(--fill-strong);
   font-size: 15px;
   font-weight: 600;
   touch-action: none;
@@ -861,7 +907,7 @@ dialog textarea {
   position: absolute;
   inset: 0;
   z-index: -1;
-  background: #a6e38f55;
+  background: #a6e38f66;
   transform-origin: left;
   animation: unlock-progress 1s linear forwards;
 }
@@ -874,13 +920,13 @@ dialog textarea {
   }
 }
 
-/* ---------- Bottom sheet ---------- */
+/* ---------- Floating glass sheet ---------- */
 .sheet-dismiss {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  background: #0006;
+  background: rgb(0 0 0 / 0.35);
   z-index: 3;
 }
 .sheet-dismiss:active:not(:disabled) {
@@ -888,23 +934,23 @@ dialog textarea {
 }
 .sheet {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  left: var(--edge-l);
+  right: var(--edge-r);
+  bottom: var(--hud-bottom);
   margin: 0 auto;
-  max-width: 560px;
-  max-height: min(80svh, 680px);
+  max-width: 520px;
+  max-height: min(78svh, 680px);
   display: flex;
   flex-direction: column;
-  padding: 0 max(16px, env(safe-area-inset-right))
-    calc(var(--bar-pad) + 8px) max(16px, env(safe-area-inset-left));
-  border: 1px solid var(--line);
-  border-bottom: 0;
-  border-radius: 26px 26px 0 0;
-  background: var(--surface);
-  box-shadow: 0 -10px 40px #000a;
+  padding: 0 14px 14px;
+  border-radius: 30px;
+  background: var(--glass-strong);
+  -webkit-backdrop-filter: blur(30px) saturate(1.8);
+  backdrop-filter: blur(30px) saturate(1.8);
+  border: 1px solid var(--glass-line);
+  box-shadow: 0 20px 60px rgb(0 0 0 / 0.55);
   z-index: 4;
-  animation: sheet-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation: sheet-in 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
   transition: transform 0.2s ease;
 }
 .sheet.dragging {
@@ -912,23 +958,23 @@ dialog textarea {
 }
 @keyframes sheet-in {
   from {
-    transform: translateY(40%);
+    transform: translateY(30%) scale(0.98);
     opacity: 0;
   }
 }
 .sheet-grabber {
   display: grid;
   place-items: center;
-  height: 22px;
+  height: 20px;
   flex-shrink: 0;
   touch-action: none;
   cursor: grab;
 }
 .sheet-grabber span {
-  width: 40px;
+  width: 38px;
   height: 5px;
   border-radius: 5px;
-  background: #ffffff30;
+  background: rgb(255 255 255 / 0.22);
 }
 .sheet-header {
   display: flex;
@@ -936,75 +982,76 @@ dialog textarea {
   align-items: center;
   gap: 12px;
   flex-shrink: 0;
-  margin: -4px -8px 6px 4px;
+  margin: -2px 0 10px 4px;
 }
 .sheet-header h2 {
   font-size: 20px;
   flex: 1;
   touch-action: none;
 }
+.sheet-close {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--fill-strong);
+  color: var(--muted);
+}
+.sheet-close svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.2;
+}
 .sheet-content {
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  padding-bottom: 4px;
 }
 .sheet h3 {
-  margin: 0 0 6px;
-  font-size: 13px;
+  margin: 18px 4px 8px;
+  font-size: 12px;
   font-weight: 650;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.07em;
   color: var(--muted);
-}
-.tool-section {
-  padding: 12px 0;
-  border-bottom: 1px solid var(--line);
-}
-.tool-section:first-child {
-  padding-top: 0;
-}
-.with-icon svg {
-  width: 20px;
-  height: 20px;
 }
 .viewer .field-help,
 .viewer .save-status {
-  margin: 8px 0;
+  margin: 8px 4px;
   color: var(--muted);
   font-size: 13px;
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
 .viewer .save-status {
-  margin: 14px 0 0;
+  margin: 12px 0 0;
   text-align: center;
 }
 
-/* Add sheet: four big targets. */
+/* Add: four big targets. */
 .add-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-  padding-bottom: 6px;
 }
 .add-tile {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 4px;
-  min-height: 124px;
+  gap: 3px;
+  min-height: 116px;
   padding: 14px;
-  border-radius: 20px;
-  background: var(--surface-raised);
-  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: var(--fill);
   text-align: left;
 }
 .add-tile strong {
   font-size: 16px;
   font-weight: 650;
-  margin-top: 6px;
+  margin-top: 8px;
 }
 .add-tile small {
   font-size: 13px;
@@ -1024,158 +1071,223 @@ dialog textarea {
   height: 24px;
   stroke-width: 2;
 }
-.tile-icon.places,
-.swatch.places {
+.tile-icon.places {
   background: #ff9a5c;
 }
-.tile-icon.routes,
-.swatch.routes {
+.tile-icon.routes {
   background: #38d6ff;
 }
-.tile-icon.checkpoints,
-.swatch.checkpoints {
+.tile-icon.checkpoints {
   background: #ffb15c;
 }
-.tile-icon.position,
-.swatch.position {
+.tile-icon.position {
   background: #c18bff;
 }
-.swatch.labels {
-  background: #fff;
-  border-radius: 3px !important;
-  height: 4px !important;
-}
-
-/* Display sheet */
-.swatch-icon {
-  display: grid;
-  place-items: center;
-  width: 20px;
-  color: var(--muted);
-}
-.swatch-icon svg {
-  width: 20px;
-  height: 20px;
-}
 .sheet-tip {
-  margin: 12px 2px 4px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 2px;
   font-size: 13px;
   color: var(--muted);
-  text-align: center;
 }
-.gesture-list {
-  margin: 0 0 14px;
-  padding-left: 18px;
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1.6;
+.sheet-tip svg {
+  width: 18px;
+  height: 18px;
 }
-.gesture-list b {
-  color: var(--text);
-  font-weight: 600;
+
+/* View: quick toggles, sliders, layer chips. */
+.quick-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
 }
-.layer-list {
+.quick-tile {
+  position: relative;
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 92px;
+  padding: 14px;
+  border-radius: 22px;
+  background: var(--fill);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    transform 0.08s;
 }
-.layer-label {
+.quick-tile:active {
+  transform: scale(0.97);
+}
+.quick-tile svg {
+  width: 26px;
+  height: 26px;
+}
+.quick-tile input,
+.layer-chip input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.quick-tile:has(input:checked) {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.quick-tile:has(input:disabled),
+.layer-chip:has(input:disabled) {
+  opacity: 0.4;
+}
+.quick-tile:has(input:focus-visible),
+.layer-chip:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.slider-row {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-height: 56px;
+  margin-top: 10px;
+  padding: 4px 14px;
+  border-radius: 22px;
+  background: var(--fill);
 }
-.layer-label small {
+.slider-row input {
+  flex: 1;
+  min-width: 0;
+}
+.slider-row > svg {
+  width: 20px;
+  height: 20px;
+  color: var(--muted);
+}
+.slider-row output {
+  min-width: 2.8em;
+  text-align: right;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
-.swatch {
-  width: 14px;
-  height: 14px;
+#rotation-controls {
+  padding-left: 6px;
+}
+.slider-step {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  padding: 0;
   border-radius: 50%;
-  flex-shrink: 0;
+  background: var(--fill-strong);
 }
-
-/* Switch rows */
-.toggle-row {
+.slider-step svg {
+  width: 20px;
+  height: 20px;
+}
+input[type="range"] {
+  accent-color: var(--accent);
+  min-height: 44px;
+}
+.layer-chips {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  min-height: 56px;
-  font-size: 16px;
-  border-bottom: 1px solid var(--line);
-  cursor: pointer;
+  flex-wrap: wrap;
+  gap: 8px;
 }
-.toggle-row:last-child {
-  border-bottom: 0;
-}
-.row-help {
-  display: block;
-  color: var(--muted);
-  font-size: 13px;
-  margin-top: 2px;
-}
-.toggle-row input {
-  appearance: none;
-  -webkit-appearance: none;
+.layer-chip {
   position: relative;
-  width: 52px;
-  height: 32px;
-  margin: 0;
-  border-radius: 20px;
-  background: #3a3f46;
-  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 8px 15px 8px 12px;
+  border-radius: 23px;
+  background: var(--fill);
+  border: 1px solid transparent;
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 550;
   cursor: pointer;
   transition: background-color 0.15s;
 }
-.toggle-row input:before {
-  content: "";
-  position: absolute;
-  width: 26px;
-  height: 26px;
-  left: 3px;
-  top: 3px;
-  border-radius: 50%;
-  background: #fff;
-  transition: transform 0.15s;
+.layer-chip svg {
+  width: 20px;
+  height: 20px;
 }
-.toggle-row input:checked {
-  background: var(--accent);
+.layer-chip small {
+  font-size: 13px;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
 }
-.toggle-row input:checked:before {
-  transform: translateX(20px);
+.layer-chip small:empty {
+  display: none;
 }
-.toggle-row input:disabled {
-  opacity: 0.4;
+.layer-chip:has(input:checked) {
+  background: var(--fill-strong);
+  border-color: rgb(255 255 255 / 0.14);
+  color: var(--text);
+}
+.layer-chip:not(:has(input:checked)) span {
+  text-decoration: line-through;
+  text-decoration-color: rgb(255 255 255 / 0.35);
+}
+.layer-chip.routes:has(input:checked) svg {
+  color: #38d6ff;
+}
+.layer-chip.places:has(input:checked) svg {
+  color: #ff9a5c;
+}
+.layer-chip.checkpoints:has(input:checked) svg {
+  color: #ffb15c;
+}
+.layer-chip.position:has(input:checked) svg {
+  color: #c18bff;
 }
 
-/* Saved sheet */
+/* Saved */
 .segmented {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 4px;
   padding: 4px;
-  margin-bottom: 8px;
-  background: var(--bg);
-  border-radius: 14px;
+  margin-bottom: 6px;
+  background: rgb(0 0 0 / 0.35);
+  border-radius: 20px;
 }
 .segmented button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   min-height: 44px;
-  border-radius: 11px;
+  padding: 0 4px;
+  border-radius: 16px;
   font-size: 14px;
   font-weight: 600;
   background: none;
   color: var(--muted);
 }
-.segmented button span {
+.segmented svg {
+  width: 18px;
+  height: 18px;
+}
+.segmented small {
   opacity: 0.7;
   font-variant-numeric: tabular-nums;
 }
 .segmented button[aria-selected="true"] {
-  background: var(--control);
+  background: var(--fill-strong);
   color: var(--text);
 }
 .navigation-row {
-  padding: 4px 0 10px;
+  padding: 4px 4px 10px;
   border-bottom: 1px solid var(--line);
 }
 .navigation-row:last-child {
@@ -1200,7 +1312,7 @@ dialog textarea {
   height: 14px;
   border-radius: 50%;
   flex-shrink: 0;
-  box-shadow: 0 0 0 3px #ffffff10;
+  box-shadow: 0 0 0 3px #ffffff14;
 }
 .navigation-jump span {
   min-width: 0;
@@ -1227,13 +1339,17 @@ dialog textarea {
   gap: 6px;
   padding-left: 26px;
 }
-.chip-button {
+.chip-button,
+.pill-button {
   min-height: 40px;
-  padding: 8px 14px;
-  border-radius: 99px;
-  background: var(--control);
+  padding: 8px 15px;
+  border-radius: 20px;
+  background: var(--fill-strong);
   font-size: 14px;
-  font-weight: 550;
+  font-weight: 600;
+}
+.pill-button {
+  flex-shrink: 0;
 }
 .chip-button.danger-text {
   color: var(--danger);
@@ -1241,7 +1357,7 @@ dialog textarea {
 .empty-list {
   margin: 12px 0;
   padding: 18px;
-  border-radius: 16px;
+  border-radius: 20px;
   border: 1px dashed #ffffff22;
   text-align: center;
   color: var(--muted);
@@ -1249,78 +1365,86 @@ dialog textarea {
   line-height: 1.5;
 }
 
-/* More sheet */
-.range-label {
+/* Settings: grouped rows with tinted icons. */
+.setting-group {
+  margin-bottom: 12px;
+  padding: 0 14px;
+  border-radius: 22px;
+  background: var(--fill);
+}
+.setting-group > * + * {
+  border-top: 1px solid var(--line);
+}
+.setting-row {
   display: flex;
-  justify-content: space-between;
   align-items: center;
   gap: 12px;
-  font-size: 16px;
-  margin: 12px 0 0;
+  min-height: 64px;
+  padding: 10px 0;
 }
-.range-label span {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.range-label svg {
-  width: 20px;
-  height: 20px;
-  color: var(--muted);
-}
-.range-label output,
-.rotation-row output {
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-input[type="range"] {
-  accent-color: var(--accent);
-  min-height: 44px;
-}
-.rotation-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 8px 0;
-}
-.rotation-row button {
+.setting-icon {
   display: grid;
   place-items: center;
-  width: 48px;
-  height: 48px;
+  width: 34px;
+  height: 34px;
   flex-shrink: 0;
-  background: var(--control);
-  border-radius: 14px;
+  border-radius: 10px;
+  color: #fff;
 }
-.rotation-row input {
-  min-width: 0;
+.setting-icon svg {
+  width: 20px;
+  height: 20px;
+}
+.setting-icon.green {
+  background: #3f8c3b;
+}
+.setting-icon.blue {
+  background: #2f6fd6;
+}
+.setting-icon.gray {
+  background: #5a6068;
+}
+.setting-text {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
-.rotation-row output {
-  width: 3.2em;
-  text-align: right;
-}
-.tool-section .secondary + .secondary,
-.tool-section .toggle-row + .secondary,
-.rotation-row + .secondary {
-  margin-top: 8px;
-}
-.tool-section > .secondary:first-child {
-  margin-bottom: 4px;
-}
-.tool-details {
-  border-bottom: 1px solid var(--line);
-}
-.tool-details summary {
-  min-height: 52px;
-  padding: 14px 0;
-  cursor: pointer;
+.setting-text strong {
   font-size: 16px;
+  font-weight: 600;
+}
+.setting-text small {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.setting-details summary {
+  list-style: none;
+  cursor: pointer;
+}
+.setting-details summary::-webkit-details-marker {
+  display: none;
+}
+.setting-details summary .setting-row:after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg);
+  transition: transform 0.15s;
+}
+.setting-details[open] summary .setting-row:after {
+  transform: rotate(-135deg);
 }
 .pan-buttons {
   display: flex;
   gap: 8px;
-  margin: 0 0 12px;
+  margin: 0 0 14px;
 }
 .pan-buttons button {
   display: flex;
@@ -1328,8 +1452,8 @@ input[type="range"] {
   justify-content: center;
   flex: 1;
   min-height: 52px;
-  border-radius: 14px;
-  background: var(--control);
+  border-radius: 18px;
+  background: var(--fill-strong);
 }
 .pan-buttons span {
   display: flex;
@@ -1343,8 +1467,16 @@ input[type="range"] {
 .pan-right {
   transform: rotate(180deg);
 }
-.tool-details .secondary {
-  margin-bottom: 12px;
+.gesture-list {
+  margin: 0 0 14px;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.gesture-list b {
+  color: var(--text);
+  font-weight: 600;
 }
 
 /* ---------- Overlay symbols ---------- */
@@ -1417,35 +1549,34 @@ input[type="range"] {
 
 @media (max-height: 520px) {
   .viewer {
-    --dock-h: calc(51px + var(--bar-pad));
-    --tool-h: calc(63px + var(--bar-pad));
+    --dock-h: 54px;
+    --tool-h: 52px;
   }
   .sheet {
-    max-height: calc(100svh - 16px - env(safe-area-inset-top));
+    max-height: calc(100svh - var(--hud-bottom) - 10px);
   }
-  .dock button {
-    min-height: 44px;
+  .dock-group button {
+    height: 44px;
   }
-  .dock button span {
+  .dock-add {
+    width: 54px;
+    height: 54px;
+  }
+  .tool-hint {
     display: none;
   }
-  .dock .dock-add svg {
-    width: 48px;
-    height: 48px;
-    margin-top: -8px;
-    padding: 12px;
+  .tool-actions button {
+    height: 52px;
   }
-  .tool-info {
-    display: none;
-  }
-  .tool-bar {
-    padding-top: 6px;
+  .tool-undo {
+    width: 52px;
   }
   .map-rail {
     flex-direction: row-reverse;
     align-items: flex-end;
   }
-  .add-tile {
+  .add-tile,
+  .quick-tile {
     min-height: 0;
   }
   .add-tile small {
