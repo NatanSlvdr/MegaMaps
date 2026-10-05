@@ -24,7 +24,7 @@ const timestamp = (value: number) =>
     hour: "2-digit",
     minute: "2-digit",
   });
-const sheets = ["add", "layers", "saved", "more"] as const;
+const sheets = ["add", "display", "saved", "more"] as const;
 type Sheet = (typeof sheets)[number];
 const savedTabs = ["routes", "places", "checkpoints"] as const;
 type SavedTab = (typeof savedTabs)[number];
@@ -117,6 +117,12 @@ export class ViewerControls {
       },
       onTap: (point) => this.onTap(point),
       onMarker: (marker) => this.editMarker(marker),
+      // Long-press drops a place without going through Add.
+      onLongPress: (point) => {
+        if (this.state.touchLocked || this.tool !== "browse") return;
+        navigator.vibrate?.(12);
+        this.openMarker("New place", point);
+      },
       onAppearance: (mode) => {
         this.darkKind = mode.kind;
         this.renderDark();
@@ -301,7 +307,7 @@ export class ViewerControls {
       (this.state.position ? 1 : 0);
     this.sheet(undefined);
     if (!count) {
-      this.toast("Nothing saved yet. Use Add to create routes and places.");
+      this.toast("Nothing saved yet. Use + to create routes and places.");
       return;
     }
     clearTimeout(this.spotlightTimer);
@@ -309,10 +315,11 @@ export class ViewerControls {
     stage.classList.remove("spotlight");
     void stage.offsetWidth;
     stage.classList.add("spotlight");
-    this.spotlightTimer = setTimeout(
-      () => stage.classList.remove("spotlight"),
-      SPOTLIGHT_MS,
-    );
+    this.el("spotlight").classList.add("active");
+    this.spotlightTimer = setTimeout(() => {
+      stage.classList.remove("spotlight");
+      this.el("spotlight").classList.remove("active");
+    }, SPOTLIGHT_MS);
   }
   private bind() {
     for (const sheet of sheets)
@@ -345,20 +352,17 @@ export class ViewerControls {
       this.viewer?.fit();
       this.sheet(undefined);
     });
-    const dark = (value: boolean) => {
+    this.on(this.input("dark-map"), "change", () => {
       if (this.state.touchLocked) return;
-      this.state.inverted = value;
+      this.state.inverted = this.input("dark-map").checked;
       this.changed();
-    };
-    this.click("quick-dark", () => {
-      dark(!this.state.inverted);
-      this.toast(
-        this.state.inverted ? darkMessages[this.darkKind] : "Original colors",
-      );
     });
-    this.on(this.input("dark-map"), "change", () =>
-      dark(this.input("dark-map").checked),
-    );
+    this.click("locate", () => {
+      if (this.state.position) this.viewer?.jumpTo(this.state.position.point);
+      else this.mode("position");
+    });
+    // Deliberate reset is allowed even while twisting is locked.
+    this.click("compass", () => this.viewer?.rotateTo(0, true));
     for (const layer of layerNames)
       this.on(this.input(`layer-${layer}`), "change", () => {
         this.state.layers[layer] = this.input(`layer-${layer}`).checked;
@@ -380,8 +384,6 @@ export class ViewerControls {
     this.click("rotate-right", () =>
       this.viewer?.rotateTo((this.state.view?.rotation ?? 0) + Math.PI / 12),
     );
-    // Deliberate reset is allowed even while twisting is locked.
-    this.click("rotate-north", () => this.viewer?.rotateTo(0, true));
     this.on(this.input("map-dimming"), "input", () => {
       this.state.dimming = Number(this.input("map-dimming").value) / 100;
       this.changed();
@@ -615,8 +617,12 @@ export class ViewerControls {
       360;
     this.input("rotation-angle").value = String(rotation);
     this.el("rotation-value").textContent = `${rotation}°`;
-    this.el<HTMLButtonElement>("rotate-north").disabled =
-      rotation === 0 || this.state.touchLocked;
+    const compass = this.el("compass");
+    compass.hidden = rotation === 0;
+    compass.querySelector("svg")?.setAttribute(
+      "style",
+      `transform: rotate(${rotation}deg)`,
+    );
   }
   private renderDark() {
     this.el("dark-status").textContent = this.state.inverted
@@ -646,22 +652,22 @@ export class ViewerControls {
     const count = route?.points.length ?? 0;
     const texts: Record<Tool, [string, string, string]> = {
       browse: ["", "", ""],
-      marker: ["New place", "Tap the map, or aim the crosshair.", "Place here"],
+      marker: ["New place", "Tap the map or aim the crosshair", "Place here"],
       position: [
         "Your position",
-        "Tap where you think you are. Manual estimate.",
+        "Tap where you think you are",
         "I’m here",
       ],
       checkpoint: [
         "Checkpoint",
-        "Tap a spot you recognize right now.",
+        "Tap a spot you recognize now",
         "Confirm here",
       ],
       route: [
         `${route?.name ?? "Route"} · ${count} point${count === 1 ? "" : "s"}`,
         count
-          ? "Keep tapping along passages."
-          : "Tap the map where the route starts.",
+          ? "Tap along the passage"
+          : "Tap where the route starts",
         "Add point",
       ],
     };
@@ -751,8 +757,12 @@ export class ViewerControls {
     this.input("map-dimming").value = String(this.state.dimming * 100);
     this.el("dimming-value").textContent =
       `${Math.round(this.state.dimming * 100)}%`;
-    this.el("quick-dark").setAttribute("aria-pressed", String(this.state.inverted));
     this.el("touch-lock").setAttribute("aria-pressed", String(locked));
+    this.el("locate").setAttribute(
+      "aria-label",
+      this.state.position ? "Go to my position" : "Set my position",
+    );
+    this.el("locate").classList.toggle("unset", !this.state.position);
     this.el("touch-locked").hidden = !locked;
     this.renderDark();
     const counts = {
@@ -769,8 +779,9 @@ export class ViewerControls {
     for (const tab of savedTabs)
       this.el(`saved-${tab}-count`).textContent = String(counts[tab]);
     for (const id of [
-      "quick-dark",
       "dark-map",
+      "locate",
+      "compass",
       "rotation-lock",
       "map-dimming",
       "add-marker",

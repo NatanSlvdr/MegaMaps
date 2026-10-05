@@ -48,7 +48,8 @@ test("viewer controls: sheets, smart dark, layers, highlight, places, checkpoint
   let rotation = 0,
     fitted = 0;
   const tools: string[] = [],
-    framed: Point[][] = [];
+    framed: Point[][] = [],
+    jumps: Point[] = [];
   const controls = new ViewerControls(root, map, state, () => {});
   controls.attach({
     setTool(tool: string) {
@@ -60,7 +61,9 @@ test("viewer controls: sheets, smart dark, layers, highlight, places, checkpoint
     rotateTo(value: number) {
       rotation = value;
     },
-    jumpTo() {},
+    jumpTo(point: Point) {
+      jumps.push(point);
+    },
     fitPoints(points: Point[]) {
       framed.push(points);
     },
@@ -114,9 +117,9 @@ test("viewer controls: sheets, smart dark, layers, highlight, places, checkpoint
     click("fit");
     assert.equal(fitted, 1);
     assert.equal(sheet.hidden, true);
-    click("open-layers");
-    assert.equal(el("sheet-title").textContent, "Layers");
-    click("open-layers");
+    click("open-display");
+    assert.equal(el("sheet-title").textContent, "Map display");
+    click("open-display");
     assert.equal(sheet.hidden, true);
     click("open-saved");
     key(root, "Escape");
@@ -126,21 +129,39 @@ test("viewer controls: sheets, smart dark, layers, highlight, places, checkpoint
     click("sheet-dismiss");
     assert.equal(sheet.hidden, true);
 
-    // Smart dark mode is on by default and toggles from dock and sheet.
+    // Smart dark mode is on by default and set from Map display.
     assert.equal(state.inverted, true);
-    assert.equal(el("quick-dark").getAttribute("aria-pressed"), "true");
+    assert.equal((el("dark-map") as HTMLInputElement).checked, true);
     controls.options().onAppearance?.({
       filter: "",
       black: "#000",
       kind: "already-dark",
     });
     assert.equal(el("dark-status").textContent, "Map is already dark");
-    click("quick-dark");
+    check("dark-map", false);
     assert.equal(state.inverted, false);
-    assert.equal(el("toast").textContent, "Original colors");
-    assert.equal((el("dark-map") as HTMLInputElement).checked, false);
+    assert.equal(el("dark-status").textContent, "Off: original colors");
     check("dark-map", true);
     assert.equal(state.inverted, true);
+
+    // The compass only appears once the map is rotated, and resets it.
+    assert.equal(el("compass").hidden, true);
+    state.view = { center: { x: 0, y: 0 }, scale: 1, rotation: Math.PI / 2 };
+    controls.options().onView();
+    assert.equal(el("compass").hidden, false);
+    rotation = 1;
+    click("compass");
+    assert.equal(rotation, 0);
+    state.view.rotation = 0;
+    controls.options().onView();
+    assert.equal(el("compass").hidden, true);
+
+    // Locate without a position starts setting one.
+    assert.equal(el("locate").getAttribute("aria-label"), "Set my position");
+    click("locate");
+    assert.equal(root.dataset.tool, "position");
+    key(root, "Escape");
+    assert.equal(root.dataset.tool, "browse");
 
     // Rotation buttons follow the lock.
     assert.equal((el("rotate-left") as HTMLButtonElement).disabled, true);
@@ -273,10 +294,19 @@ test("viewer controls: sheets, smart dark, layers, highlight, places, checkpoint
     assert.equal(el("layer-places-count").textContent, "1");
     check("layer-places", false);
     assert.equal(state.layers.places, false);
-    click("open-layers");
     click("spotlight");
-    assert.equal(sheet.hidden, true);
     assert.equal(stage.classList.contains("spotlight"), true);
+    assert.equal(el("spotlight").classList.contains("active"), true);
+
+    // Locate jumps to the saved estimate; long-press drops a place.
+    assert.equal(el("locate").getAttribute("aria-label"), "Go to my position");
+    click("locate");
+    assert.deepEqual(jumps.at(-1), state.position!.point);
+    controls.options().onLongPress?.({ x: 2000, y: 2100 });
+    assert.equal(el("marker-dialog").hasAttribute("open"), true);
+    assert.equal((el("marker-label") as HTMLInputElement).value, "Landmark 2");
+    submit("marker-form");
+    assert.deepEqual(state.markers.at(-1)?.point, { x: 2000, y: 2100 });
 
     // Touch lock hides everything except the hold-to-unlock bar.
     click("touch-lock");
@@ -284,7 +314,7 @@ test("viewer controls: sheets, smart dark, layers, highlight, places, checkpoint
     assert.equal(dock.hidden, true);
     assert.equal(el("zoom-rail").hidden, true);
     assert.equal(el("touch-locked").hidden, false);
-    assert.equal((el("quick-dark") as HTMLButtonElement).disabled, true);
+    assert.equal((el("dark-map") as HTMLInputElement).disabled, true);
     click("open-more");
     assert.equal(sheet.hidden, true, "sheets stay closed while locked");
     const unlock = el("unlock-view");

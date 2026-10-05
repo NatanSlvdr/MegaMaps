@@ -32,6 +32,8 @@ export interface ViewerOptions {
   onView(): void;
   onTap(point: Point): void;
   onMarker(marker: MapMarker): void;
+  /** Long press on the map while browsing, in image coordinates. */
+  onLongPress?(point: Point): void;
   onAppearance?(mode: DarkMode): void;
 }
 export class Viewer {
@@ -84,6 +86,13 @@ export class Viewer {
       rotationLocked: () => this.navigation.rotationLocked,
       editing: () => this.tool !== "browse",
       tap: (point) => this.tap(point),
+      longPress: (screen) => {
+        const point = screenToWorld(this.camera, screen);
+        if (this.tool !== "browse" || !insideImage(point, this.map)) return false;
+        if (!this.options?.onLongPress) return false;
+        this.options.onLongPress(point);
+        return true;
+      },
     });
     document.addEventListener(
       "visibilitychange",

@@ -2,7 +2,10 @@ import { zoomAt, transformAt, type Camera, type Point } from "./camera";
 interface Pointer extends Point {
   start: Point;
   moved: boolean;
+  /** A long press already handled this pointer. */
+  held?: boolean;
 }
+const LONG_PRESS_MS = 500;
 interface InteractionHost {
   getCamera(): Camera;
   setCamera(camera: Camera): void;
@@ -13,6 +16,7 @@ interface InteractionHost {
   rotationLocked?(): boolean;
   editing?(): boolean;
   tap?(point: Point): boolean;
+  longPress?(point: Point): boolean;
 }
 const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 const midpoint = (a: Point, b: Point) => ({
@@ -30,7 +34,14 @@ export function attachInteractions(
     lastMove = 0,
     inertia = 0,
     lastTap = { time: 0, x: 0, y: 0 },
-    hadPinch = false;
+    hadPinch = false,
+    // Double-tap-and-drag zoom: one-handed, anchored where the finger landed.
+    quickZoom: { anchor: Point; y: number; scale: number } | undefined,
+    pressTimer: ReturnType<typeof setTimeout> | undefined;
+  const cancelPress = () => {
+    clearTimeout(pressTimer);
+    pressTimer = undefined;
+  };
   const point = (event: PointerEvent | MouseEvent) => {
     const rect = canvas.getBoundingClientRect();
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
@@ -40,6 +51,7 @@ export function attachInteractions(
     return Math.max(min, Math.min(max, scale));
   };
   function stop() {
+    cancelPress();
     cancelAnimationFrame(inertia);
     inertia = 0;
     host.stopAnimation();
@@ -67,7 +79,29 @@ export function attachInteractions(
       canvas.setPointerCapture(event.pointerId);
       const p = point(event);
       points.set(event.pointerId, { ...p, start: p, moved: false });
-      if (points.size === 1) hadPinch = false;
+      quickZoom = undefined;
+      if (points.size === 1) {
+        hadPinch = false;
+        const id = event.pointerId;
+        if (
+          event.pointerType !== "mouse" &&
+          !host.editing?.() &&
+          performance.now() - lastTap.time < 320 &&
+          distance(lastTap, p) < 32
+        )
+          quickZoom = { anchor: p, y: p.y, scale: host.getCamera().scale };
+        else if (host.longPress)
+          pressTimer = setTimeout(() => {
+            pressTimer = undefined;
+            const held = points.get(id);
+            if (!held || held.moved || points.size !== 1 || host.locked?.())
+              return;
+            if (host.longPress?.(held)) {
+              held.held = true;
+              lastTap.time = 0;
+            }
+          }, LONG_PRESS_MS);
+      }
       if (points.size > 1) {
         hadPinch = true;
         lastTap.time = 0;
@@ -88,10 +122,27 @@ export function attachInteractions(
       // Fingers wobble; a small slop keeps taps (route points) from becoming pans.
       const slop = event.pointerType === "mouse" ? 4 : 10;
       const moved = old.moved || distance(old.start, p) > slop;
-      if (moved) lastTap.time = 0;
-      points.set(event.pointerId, { ...p, start: old.start, moved });
+      if (moved) {
+        lastTap.time = 0;
+        cancelPress();
+      }
+      if (old.held) return;
+      points.set(event.pointerId, { ...old, ...p, moved });
       const after = [...points.values()];
       const camera = host.getCamera();
+      if (quickZoom && after.length === 1) {
+        // Drag down zooms in, up zooms out (as in common map apps).
+        if (moved)
+          host.setCamera(
+            zoomAt(
+              camera,
+              clampScale(quickZoom.scale * Math.exp((p.y - quickZoom.y) * 0.01)),
+              quickZoom.anchor.x,
+              quickZoom.anchor.y,
+            ),
+          );
+        return;
+      }
       if (before.length >= 2) {
         const c0 = midpoint(before[0]!, before[1]!),
           c1 = midpoint(after[0]!, after[1]!);
@@ -136,12 +187,19 @@ export function attachInteractions(
     const pointer = points.get(event.pointerId);
     if (!pointer) return;
     points.delete(event.pointerId);
+    cancelPress();
+    const zooming = quickZoom;
+    if (!points.size) quickZoom = undefined;
     if (event.type === "pointercancel" || event.type === "lostpointercapture") {
       lastTap.time = 0;
       velocity = { x: 0, y: 0 };
       return;
     }
     if (host.locked?.()) return;
+    if (pointer.held || (zooming && pointer.moved)) {
+      lastTap.time = 0;
+      return;
+    }
     if (!points.size && !pointer.moved && !hadPinch && host.tap?.(pointer)) {
       lastTap.time = 0;
       return;
@@ -231,6 +289,7 @@ export function attachInteractions(
     reset() {
       stop();
       points.clear();
+      quickZoom = undefined;
       lastTap.time = 0;
     },
     dispose() {

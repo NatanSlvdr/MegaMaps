@@ -495,32 +495,45 @@ dialog textarea {
   overflow: hidden;
   transition: filter 0.4s;
 }
-/* Floating chrome shares one translucent near-black surface. */
+/* Bars are pinned to the screen edges with the safe areas inside them, so no
+   strip of map is wasted under the bottom bar. On wide screens their content
+   stays in a centered, thumb-sized column. */
+.viewer {
+  --bar-pad: max(6px, calc(env(safe-area-inset-bottom) - 14px));
+  --dock-h: calc(63px + var(--bar-pad));
+  --tool-h: calc(95px + var(--bar-pad));
+  --top-h: calc(57px + env(safe-area-inset-top));
+}
 .viewer-top,
 .dock,
-.zoom-rail,
 .tool-bar,
-.touch-locked,
-.toast {
+.touch-locked {
   position: absolute;
   z-index: 2;
-  background: #0d0f12eb;
-  border: 1px solid var(--line);
-  box-shadow: 0 6px 24px #0008;
-  -webkit-backdrop-filter: blur(14px);
-  backdrop-filter: blur(14px);
+  left: 0;
+  right: 0;
+  padding-left: max(8px, env(safe-area-inset-left), calc((100% - 560px) / 2));
+  padding-right: max(8px, env(safe-area-inset-right), calc((100% - 560px) / 2));
+  background: #0b0d10f2;
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+.dock,
+.tool-bar,
+.touch-locked {
+  bottom: 0;
+  padding-top: 6px;
+  padding-bottom: var(--bar-pad);
+  border-top: 1px solid var(--line);
 }
 .viewer-top {
-  top: calc(8px + env(safe-area-inset-top));
-  left: max(10px, env(safe-area-inset-left));
-  right: max(10px, env(safe-area-inset-right));
-  max-width: 640px;
-  margin: 0 auto;
+  top: 0;
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 4px;
-  border-radius: 18px;
+  padding-top: calc(4px + env(safe-area-inset-top));
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--line);
 }
 .viewer-icon-button {
   display: grid;
@@ -541,9 +554,11 @@ dialog textarea {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  align-items: center;
   line-height: 1.25;
 }
 #viewer-title {
+  max-width: 100%;
   font-size: 15px;
   font-weight: 600;
   white-space: nowrap;
@@ -559,7 +574,8 @@ dialog textarea {
   color: var(--accent);
 }
 .toast {
-  top: calc(72px + env(safe-area-inset-top));
+  position: absolute;
+  top: calc(var(--top-h) + 10px);
   left: 50%;
   transform: translateX(-50%);
   max-width: calc(100% - 32px);
@@ -567,6 +583,9 @@ dialog textarea {
   margin: 0;
   padding: 10px 16px;
   border-radius: 99px;
+  background: #1a1d21f2;
+  border: 1px solid var(--line);
+  box-shadow: 0 6px 24px #0008;
   font-size: 14px;
   text-align: center;
   z-index: 6;
@@ -579,91 +598,113 @@ dialog textarea {
     transform: translate(-50%, -6px);
   }
 }
-/* Zoom stays one thumb-stretch above the dock, on the right edge. */
-.zoom-rail {
+/* Map rail: right edge, just above whichever bottom bar is showing. */
+.map-rail {
+  position: absolute;
+  z-index: 2;
   right: max(10px, env(safe-area-inset-right));
-  bottom: calc(104px + env(safe-area-inset-bottom));
+  bottom: calc(var(--dock-h) + 14px);
   display: flex;
   flex-direction: column;
-  border-radius: 18px;
-  overflow: hidden;
+  align-items: center;
+  gap: 10px;
+  transition: bottom 0.2s ease;
 }
-.viewer[data-tool]:not([data-tool="browse"]) .zoom-rail {
-  bottom: calc(150px + env(safe-area-inset-bottom));
+.viewer[data-tool]:not([data-tool="browse"]) .map-rail {
+  bottom: calc(var(--tool-h) + 14px);
 }
-.zoom-rail button {
+.rail-single,
+.rail-group {
+  background: #0d0f12eb;
+  border: 1px solid var(--line);
+  box-shadow: 0 6px 24px #0008;
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+.rail-single {
   display: grid;
   place-items: center;
-  width: 54px;
-  height: 54px;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+}
+.rail-single.unset {
+  color: var(--muted);
+}
+#compass svg {
+  width: 28px;
+  height: 28px;
+}
+.rail-group {
+  display: flex;
+  flex-direction: column;
+  border-radius: 26px;
+  overflow: hidden;
+}
+.rail-group button {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 56px;
   background: none;
 }
-.zoom-rail button + button {
+.rail-group button + button {
   border-top: 1px solid var(--line);
 }
 .dock {
-  left: max(10px, env(safe-area-inset-left));
-  right: max(10px, env(safe-area-inset-right));
-  bottom: calc(10px + env(safe-area-inset-bottom));
-  max-width: 480px;
-  margin: 0 auto;
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  align-items: center;
+  align-items: end;
   gap: 2px;
-  padding: 6px;
-  border-radius: 24px;
 }
 .dock button {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  min-height: 60px;
-  padding: 6px 2px;
-  border-radius: 18px;
-  font-size: 12px;
+  gap: 3px;
+  min-height: 56px;
+  padding: 4px 2px;
+  border-radius: 14px;
+  font-size: 11px;
   font-weight: 600;
+  letter-spacing: 0.01em;
   background: none;
   color: var(--muted);
 }
 .dock button svg {
-  width: 24px;
-  height: 24px;
+  width: 25px;
+  height: 25px;
 }
-.dock button[aria-pressed="true"],
 .dock button[aria-expanded="true"] {
   color: var(--text);
-  background: #ffffff12;
 }
-.dock button[aria-pressed="true"] svg {
-  color: var(--accent);
+#spotlight svg {
+  color: #ffe27a;
 }
-.dock .dock-add {
-  color: var(--accent-ink);
+#spotlight.active {
+  color: var(--text);
+  background: #ffe27a1f;
 }
+/* Add is a raised button that breaks the bar's top edge. */
 .dock .dock-add svg {
-  width: 52px;
-  height: 52px;
-  padding: 13px;
+  width: 58px;
+  height: 58px;
+  margin-top: -24px;
+  padding: 15px;
   border-radius: 50%;
   background: var(--accent);
+  color: var(--accent-ink);
   stroke-width: 2.4;
-  box-shadow: 0 4px 14px #a6e38f40;
-}
-.dock .dock-add span {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
+  box-shadow:
+    0 0 0 5px #0b0d10,
+    0 8px 22px #a6e38f38;
 }
 .viewer-error {
   position: absolute;
-  bottom: calc(110px + env(safe-area-inset-bottom));
+  bottom: calc(var(--dock-h) + 16px);
   left: 16px;
-  right: 16px;
+  right: 80px;
   text-align: center;
   font-size: 14px;
   line-height: 1.5;
@@ -679,38 +720,37 @@ dialog textarea {
 
 /* ---------- Placement / route drawing ---------- */
 .tool-bar {
-  left: max(10px, env(safe-area-inset-left));
-  right: max(10px, env(safe-area-inset-right));
-  bottom: calc(10px + env(safe-area-inset-bottom));
-  max-width: 480px;
-  margin: 0 auto;
-  padding: 12px;
-  border-radius: 24px;
+  padding-top: 10px;
 }
-.tool-bar p {
-  margin: 0 4px 10px;
+.tool-info {
+  margin: 0 6px 8px;
   font-size: 14px;
-  line-height: 1.4;
+  line-height: 20px;
   color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.tool-bar strong {
-  display: block;
+.tool-info strong {
   color: var(--text);
-  font-size: 15px;
   font-weight: 650;
 }
+/* Done stays left, away from the thumb's resting spot; the big action is central. */
 .tool-actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr 1.7fr 1fr;
   gap: 8px;
+}
+.tool-actions:has(.tool-undo[hidden]) {
+  grid-template-columns: 1fr 2fr;
 }
 .tool-actions button {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  flex: 1;
-  min-height: 54px;
-  padding: 8px 10px;
+  min-height: 56px;
+  padding: 8px;
   border-radius: 16px;
   background: var(--control);
   font-size: 15px;
@@ -721,15 +761,17 @@ dialog textarea {
   height: 20px;
 }
 .tool-actions .tool-primary {
-  flex: 1.6;
   background: var(--accent);
   color: var(--accent-ink);
+  font-size: 16px;
 }
 .tool-actions .tool-primary svg {
+  width: 22px;
+  height: 22px;
   stroke-width: 2.4;
 }
 .tool-actions .tool-done.ready {
-  background: #ffffff;
+  background: #fff;
   color: #000;
 }
 .placement-center {
@@ -775,19 +817,14 @@ dialog textarea {
 
 /* ---------- Touch lock ---------- */
 .touch-locked {
-  left: max(10px, env(safe-area-inset-left));
-  right: max(10px, env(safe-area-inset-right));
-  bottom: calc(10px + env(safe-area-inset-bottom));
-  max-width: 480px;
-  margin: 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 10px 10px 16px;
-  border-radius: 24px;
+  padding-top: 8px;
 }
 .touch-locked > div {
+  margin-left: 8px;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -860,7 +897,7 @@ dialog textarea {
   display: flex;
   flex-direction: column;
   padding: 0 max(16px, env(safe-area-inset-right))
-    max(14px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+    calc(var(--bar-pad) + 8px) max(16px, env(safe-area-inset-left));
   border: 1px solid var(--line);
   border-bottom: 0;
   border-radius: 26px 26px 0 0;
@@ -1009,35 +1046,33 @@ dialog textarea {
   height: 4px !important;
 }
 
-/* Layers sheet */
-.spotlight-button {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  width: 100%;
-  padding: 16px;
-  margin-bottom: 6px;
-  border-radius: 20px;
-  text-align: left;
-  color: #fff;
-  background: linear-gradient(135deg, #1d3a4a, #3a2150);
-  border: 1px solid #ffffff22;
+/* Display sheet */
+.swatch-icon {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  color: var(--muted);
 }
-.spotlight-button svg {
-  width: 30px;
-  height: 30px;
-  color: #ffe27a;
+.swatch-icon svg {
+  width: 20px;
+  height: 20px;
 }
-.spotlight-button strong {
-  display: block;
-  font-size: 16px;
-}
-.spotlight-button small {
-  display: block;
-  margin-top: 3px;
+.sheet-tip {
+  margin: 12px 2px 4px;
   font-size: 13px;
-  line-height: 1.35;
-  color: #d6d9e0;
+  color: var(--muted);
+  text-align: center;
+}
+.gesture-list {
+  margin: 0 0 14px;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.gesture-list b {
+  color: var(--text);
+  font-weight: 600;
 }
 .layer-list {
   display: flex;
@@ -1381,25 +1416,34 @@ input[type="range"] {
 }
 
 @media (max-height: 520px) {
+  .viewer {
+    --dock-h: calc(51px + var(--bar-pad));
+    --tool-h: calc(63px + var(--bar-pad));
+  }
   .sheet {
     max-height: calc(100svh - 16px - env(safe-area-inset-top));
   }
-  .viewer-top {
-    top: calc(4px + env(safe-area-inset-top));
-  }
-  .dock,
-  .tool-bar,
-  .touch-locked {
-    bottom: calc(6px + env(safe-area-inset-bottom));
-  }
   .dock button {
-    min-height: 48px;
+    min-height: 44px;
   }
   .dock button span {
     display: none;
   }
-  .zoom-rail {
-    bottom: calc(76px + env(safe-area-inset-bottom));
+  .dock .dock-add svg {
+    width: 48px;
+    height: 48px;
+    margin-top: -8px;
+    padding: 12px;
+  }
+  .tool-info {
+    display: none;
+  }
+  .tool-bar {
+    padding-top: 6px;
+  }
+  .map-rail {
+    flex-direction: row-reverse;
+    align-items: flex-end;
   }
   .add-tile {
     min-height: 0;

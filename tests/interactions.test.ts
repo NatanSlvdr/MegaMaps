@@ -24,6 +24,7 @@ function host(canvas: Canvas) {
     rotationLocked = true,
     editing = false,
     taps = 0,
+    presses = 0,
     animations = 0;
   const interactions = attachInteractions(
     canvas as unknown as HTMLCanvasElement,
@@ -48,6 +49,11 @@ function host(canvas: Canvas) {
         }
         return false;
       },
+      longPress: () => {
+        if (editing) return false;
+        presses++;
+        return true;
+      },
     },
   );
   return {
@@ -64,6 +70,7 @@ function host(canvas: Canvas) {
       editing = value;
     },
     taps: () => taps,
+    presses: () => presses,
     animations: () => animations,
   };
 }
@@ -125,5 +132,65 @@ test("touch lock blocks dragging, wheel and double zoom; edit taps never double-
   }
   assert.equal(h.taps(), 2);
   assert.equal(h.animations(), 0);
+  h.interactions.dispose();
+});
+test("double-tap and drag zooms with one finger around the tapped point", () => {
+  Object.defineProperty(globalThis, "cancelAnimationFrame", {
+    value: () => {},
+    configurable: true,
+  });
+  const canvas = new Canvas(),
+    h = host(canvas);
+  const anchor = screenToWorld(h.camera(), { x: 150, y: 150 });
+  emit(canvas, "pointerdown", pointer(1, 150, 150));
+  emit(canvas, "pointerup", pointer(1, 150, 150));
+  emit(canvas, "pointerdown", pointer(1, 152, 150));
+  emit(canvas, "pointermove", pointer(1, 152, 250));
+  assert.ok(Math.abs(h.camera().scale - Math.E) < 1e-6, "drag down zooms in");
+  const after = screenToWorld(h.camera(), { x: 152, y: 150 });
+  assert.ok(Math.abs(after.x - anchor.x - 2) < 1e-6);
+  assert.ok(Math.abs(after.y - anchor.y) < 1e-6);
+  emit(canvas, "pointermove", pointer(1, 152, 50));
+  assert.ok(Math.abs(h.camera().scale - 1 / Math.E) < 1e-6, "drag up zooms out");
+  emit(canvas, "pointerup", pointer(1, 152, 50));
+  assert.equal(h.animations(), 0, "a dragged double-tap is not a double-tap zoom");
+  // A plain double tap still zooms in.
+  emit(canvas, "pointerdown", pointer(1, 300, 300));
+  emit(canvas, "pointerup", pointer(1, 300, 300));
+  emit(canvas, "pointerdown", pointer(1, 300, 300));
+  emit(canvas, "pointerup", pointer(1, 300, 300));
+  assert.equal(h.animations(), 1);
+  h.interactions.dispose();
+});
+test("long press fires once without panning; moving or editing cancels it", async () => {
+  Object.defineProperty(globalThis, "cancelAnimationFrame", {
+    value: () => {},
+    configurable: true,
+  });
+  const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  const canvas = new Canvas(),
+    h = host(canvas);
+  emit(canvas, "pointerdown", pointer(1, 100, 100));
+  await wait(560);
+  assert.equal(h.presses(), 1);
+  // Wobbling after the press must not pan the map.
+  emit(canvas, "pointermove", pointer(1, 140, 140));
+  emit(canvas, "pointerup", pointer(1, 140, 140));
+  assert.deepEqual(h.camera(), { x: 0, y: 0, scale: 1 });
+  emit(canvas, "pointerdown", pointer(1, 100, 100));
+  emit(canvas, "pointermove", pointer(1, 160, 100));
+  await wait(560);
+  emit(canvas, "pointerup", pointer(1, 160, 100));
+  assert.equal(h.presses(), 1, "dragging is not a long press");
+  emit(canvas, "pointerdown", pointer(1, 100, 100));
+  emit(canvas, "pointerup", pointer(1, 100, 100));
+  await wait(560);
+  assert.equal(h.presses(), 1, "a quick tap is not a long press");
+  h.setEditing(true);
+  emit(canvas, "pointerdown", pointer(1, 100, 100));
+  await wait(560);
+  emit(canvas, "pointerup", pointer(1, 100, 100));
+  assert.equal(h.presses(), 1);
+  assert.equal(h.taps(), 1, "while editing, a slow tap still places a point");
   h.interactions.dispose();
 });
