@@ -1,0 +1,64 @@
+import { database, transact } from "./database";
+import { defaultNavigation, type NavigationState } from "../viewer/navigation";
+import type { MapRecord } from "../types";
+export const loadNavigation = async (mapId: string) =>
+  (await transact<NavigationState | undefined>("navigation", "readonly", (s) =>
+    s.get(mapId),
+  )) ?? defaultNavigation(mapId);
+export const lastMap = () =>
+  transact<string | null | undefined>("settings", "readonly", (s) =>
+    s.get("last-map"),
+  );
+export const setLastMap = (id: string | null) =>
+  transact("settings", "readwrite", (s) => s.put(id, "last-map"));
+// One transaction checks map existence and writes notes. A late camera save after
+// deleting a map cannot resurrect annotations or orphan a navigation record.
+export async function saveNavigation(state: NavigationState) {
+  const db = await database();
+  return new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(["maps", "navigation"], "readwrite");
+    const request: IDBRequest<MapRecord | undefined> = tx
+      .objectStore("maps")
+      .get(state.mapId);
+    request.onsuccess = () => {
+      if (request.result?.status === "ready")
+        tx.objectStore("navigation").put(state);
+    };
+    tx.oncomplete = () => resolve();
+    tx.onabort = () => reject(tx.error);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+export const deleteNavigation = (mapId: string) =>
+  transact("navigation", "readwrite", (s) => s.delete(mapId));
+// Throttle camera writes, serialize them, and flush on visibility changes/home.
+export class NavigationPersistence {
+  private timer?: ReturnType<typeof setTimeout>;
+  private chain = Promise.resolve();
+  private dirty = false;
+  constructor(
+    private snapshot: () => NavigationState,
+    private onError: (error: unknown) => void,
+  ) {}
+  changed() {
+    this.dirty = true;
+    this.timer ??= setTimeout(() => {
+      void this.flush();
+    }, 250);
+  }
+  flush() {
+    clearTimeout(this.timer);
+    this.timer = undefined;
+    if (this.dirty) {
+      const state = structuredClone(this.snapshot());
+      this.dirty = false;
+      this.chain = this.chain
+        .then(() => saveNavigation(state))
+        .catch((error) => {
+          this.dirty = true;
+          this.onError(error);
+        });
+    }
+    return this.chain;
+  }
+}

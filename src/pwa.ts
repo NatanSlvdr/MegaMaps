@@ -1,0 +1,63 @@
+export async function registerOfflineShell(onStatus: (ready: boolean) => void) {
+  if (!import.meta.env.PROD || !("serviceWorker" in navigator)) {
+    onStatus(false);
+    return;
+  }
+  try {
+    const registration = await navigator.serviceWorker.register("/sw.js", {
+      scope: "/",
+    });
+    await navigator.serviceWorker.ready;
+    onStatus(true);
+    // Installation is atomic: ready means every shell asset, including WASM, cached.
+    void registration.update().catch(() => {});
+  } catch {
+    onStatus(false);
+  }
+}
+
+export async function verifyOfflineShell(): Promise<{
+  ready: boolean;
+  message: string;
+}> {
+  if (!("serviceWorker" in navigator))
+    return {
+      ready: false,
+      message: "Offline startup needs a browser with service-worker support.",
+    };
+  const registration = await navigator.serviceWorker.getRegistration("/");
+  const worker = navigator.serviceWorker.controller ?? registration?.active;
+  if (!worker)
+    return {
+      ready: false,
+      message:
+        "Use the production build over HTTPS (or localhost) and wait for the app to finish its offline setup.",
+    };
+  return new Promise((resolve) => {
+    const channel = new MessageChannel();
+    const finish = (result: { ready: boolean; message: string }) => {
+      clearTimeout(timer);
+      channel.port1.close();
+      resolve(result);
+    };
+    const timer = setTimeout(
+      () =>
+        finish({
+          ready: false,
+          message:
+            "Close other Map Viewer windows and reopen to finish the app update, then check again.",
+        }),
+      5000,
+    );
+    channel.port1.onmessage = (
+      event: MessageEvent<{ ready: boolean; missing: string[] }>,
+    ) =>
+      finish({
+        ready: event.data.ready,
+        message: event.data.ready
+          ? "App shell checked offline."
+          : "Some application files are missing. Reopen online to prepare the app, then check again.",
+      });
+    worker.postMessage({ type: "verify-shell" }, [channel.port2]);
+  });
+}

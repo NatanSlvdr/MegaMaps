@@ -1,0 +1,10 @@
+/node_modules/
+/dist/
+/fixtures/
+.DS_Store
+/native/build/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
