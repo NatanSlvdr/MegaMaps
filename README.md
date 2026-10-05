@@ -20,6 +20,17 @@ npm run preview
 
 Production preview: **http://localhost:4173**. Wait for **Offline ready**, import a map, then go offline and reload. Keep the same origin/port: browser storage belongs to the origin. Build output is in `dist/` and can be served by any static HTTPS host.
 
+## Deploy to Cloudflare
+
+The `mega-maps` Worker serves the production files from `dist/` at **https://mega-maps.natan-slvdr.fr** using Cloudflare static assets. The service worker, image-processing workers, and JPEG WASM codec are included in the deployment.
+
+```sh
+npx wrangler login                        # Once per development machine
+npm run deploy                            # Build and publish
+```
+
+Custom domains are configured in `wrangler.jsonc`. Cloudflare manages their DNS records and HTTPS certificates. Imported maps and annotations remain in each device's browser storage.
+
 ### On an iPhone or Android device
 
 An ordinary `http://192.168…` LAN address is **not** a secure context; service workers and OPFS require HTTPS (desktop `localhost` is an exception). Use a trusted development certificate for your computer's LAN address, trust its issuing certificate on the phone, then:
