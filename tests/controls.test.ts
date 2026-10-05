@@ -79,6 +79,47 @@ test("cave controls invert, lock rotation, create/edit landmarks, record checkpo
   const input = (id: string, value: string) =>
     ((document.getElementById(id)! as HTMLInputElement).value = value);
   try {
+    const panel = document.getElementById("map-panel")!;
+    const toolbar = root.querySelector<HTMLElement>(".viewer-controls")!;
+    const hint = document.getElementById("tool-hint")!;
+    const backdrop = document.getElementById("sheet-dismiss")!;
+    assert.equal(panel.hidden, true);
+    assert.equal(toolbar.hidden, false);
+    click("toggle-panel");
+    assert.equal(panel.hidden, false);
+    assert.equal(backdrop.hidden, false);
+    assert.equal(toolbar.hidden, true);
+    assert.equal(
+      document.getElementById("toggle-panel")!.getAttribute("aria-expanded"),
+      "true",
+    );
+    click("tools-places");
+    assert.equal(document.getElementById("tab-display")!.hidden, true);
+    assert.equal(document.getElementById("tab-places")!.hidden, false);
+    const arrow = new window.Event("keydown", {
+      bubbles: true,
+      cancelable: true,
+    });
+    Object.defineProperty(arrow, "key", { value: "ArrowRight" });
+    document.getElementById("tools-places")!.dispatchEvent(arrow);
+    assert.equal(document.getElementById("tab-routes")!.hidden, false);
+    assert.equal(
+      document.getElementById("tools-routes")!.getAttribute("aria-selected"),
+      "true",
+    );
+    const escape = new window.Event("keydown", {
+      bubbles: true,
+      cancelable: true,
+    });
+    Object.defineProperty(escape, "key", { value: "Escape" });
+    root.dispatchEvent(escape);
+    assert.equal(panel.hidden, true);
+    assert.equal(backdrop.hidden, true);
+    assert.equal(toolbar.hidden, false);
+    click("toggle-panel");
+    assert.equal(document.getElementById("tab-routes")!.hidden, false);
+    click("sheet-dismiss");
+    assert.equal(panel.hidden, true);
     click("quick-invert");
     assert.equal(state.inverted, true);
     assert.equal(
@@ -95,11 +136,16 @@ test("cave controls invert, lock rotation, create/edit landmarks, record checkpo
     click("rotate-right");
     assert.ok(Math.abs(rotation - Math.PI / 12) < 1e-9);
     click("add-marker");
+    assert.equal(toolbar.hidden, true);
+    assert.equal(hint.hidden, false);
+    assert.equal(document.getElementById("placement-center")!.hidden, false);
     controls.options().onTap({ x: 500, y: 600 });
     input("marker-label", "<Entrance>");
     kind = "entrance";
     input("marker-note", "Left opening");
     submit("marker-form");
+    assert.equal(toolbar.hidden, false);
+    assert.equal(hint.hidden, true);
     assert.equal(state.markers[0]?.label, "<Entrance>");
     assert.equal(state.markers[0]?.kind, "entrance");
     controls.options().onMarker(state.markers[0]!);
@@ -127,6 +173,8 @@ test("cave controls invert, lock rotation, create/edit landmarks, record checkpo
     controls.options().onTap({ x: 1400, y: 1600 });
     click("route-finish");
     assert.equal(state.routes[0]?.draft, false);
+    assert.equal(toolbar.hidden, false);
+    assert.equal(hint.hidden, true);
     await controls.flush();
     assert.equal(
       (await loadNavigation("controls")).routes[0]?.name,
@@ -134,6 +182,8 @@ test("cave controls invert, lock rotation, create/edit landmarks, record checkpo
     );
     click("touch-lock");
     assert.equal(state.touchLocked, true);
+    assert.equal(toolbar.hidden, true);
+    assert.equal(document.getElementById("touch-locked")!.hidden, false);
     assert.equal(
       (document.getElementById("quick-invert")! as HTMLButtonElement).disabled,
       true,
@@ -151,6 +201,10 @@ test("cave controls invert, lock rotation, create/edit landmarks, record checkpo
     press();
     await new Promise((resolve) => setTimeout(resolve, 1050));
     assert.equal(state.touchLocked, false);
+    assert.equal(toolbar.hidden, false);
+    click("toggle-panel");
+    click("close-panel");
+    assert.equal(panel.hidden, true);
     changes.push(state.checkpoints.length);
     assert.deepEqual(changes, [1]);
   } finally {

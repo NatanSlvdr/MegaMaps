@@ -40,6 +40,7 @@ RSS includes Node, the TypeScript runner, native-canvas, encoding buffers, alloc
 - Real viewer canvas code through a Node DOM/native-canvas adapter: restored rotation, rotation retention during fit animation, inversion/dimming restricted to the canvas, compensated dark margins, legible overlay labels and locked camera controls.
 - Offline verification worker detecting damaged/missing tiles while retaining at most one decoded verification bitmap. Service-worker shell verification detects a missing WASM cache entry without network fallback.
 - Device orientation API mocks covering unsupported, accepted and denied locks, fullscreen rollback and unlock failure. These verify request handling, not actual phone capability.
+- Tools-sheet controls through the Node DOM adapter: tab selection/arrow-key navigation, outside/Close/Escape dismissal, normal toolbar restoration, contextual placement controls and locked/unlocked transitions. Layout appearance and touch ergonomics still need physical-device review.
 
 ## Physical-device acceptance checklist — pending
 

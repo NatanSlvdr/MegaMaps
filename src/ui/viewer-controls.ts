@@ -20,6 +20,7 @@ const timestamp = (value: number) =>
     hour: "2-digit",
     minute: "2-digit",
   });
+const toolTabs = ["display", "places", "routes"] as const;
 
 // Owns map tools/dialogs and saves; the renderer only knows coordinates/appearance.
 export class ViewerControls {
@@ -45,6 +46,7 @@ export class ViewerControls {
   private deviceLocked = false;
   private ownsFullscreen = false;
   private disposed = false;
+  private toolTab: (typeof toolTabs)[number] = "display";
   constructor(
     private root: HTMLElement,
     private map: MapRecord,
@@ -59,6 +61,8 @@ export class ViewerControls {
       },
     );
     this.bind();
+    this.selectTab("display");
+    this.panel(false);
     this.render();
   }
   private el<T extends HTMLElement = HTMLElement>(id: string) {
@@ -96,9 +100,30 @@ export class ViewerControls {
     this.viewer?.updateNavigation(this.state);
     this.render();
   }
-  private panel(open: boolean) {
+  private panel(open: boolean, returnFocus = false) {
+    if (open && this.state.touchLocked) return;
     this.el("map-panel").hidden = !open;
+    this.el("sheet-dismiss").hidden = !open;
     this.el("toggle-panel").setAttribute("aria-expanded", String(open));
+    this.el("toggle-panel").setAttribute(
+      "aria-label",
+      open ? "Close map tools" : "Open map tools",
+    );
+    this.renderTool();
+    if (open) this.el(`tools-${this.toolTab}`).focus();
+    else if (returnFocus) this.el("toggle-panel").focus();
+  }
+  // Native buttons with roving tab focus keep the tools sheet usable by keyboard.
+  private selectTab(tab: (typeof toolTabs)[number]) {
+    this.toolTab = tab;
+    for (const name of toolTabs) {
+      const selected = name === tab;
+      const button = this.el<HTMLButtonElement>(`tools-${name}`);
+      button.setAttribute("aria-selected", String(selected));
+      button.tabIndex = selected ? 0 : -1;
+      this.el(`tab-${name}`).hidden = !selected;
+    }
+    this.root.querySelector<HTMLElement>(".sheet-content")!.scrollTop = 0;
   }
   private mode(tool: Tool) {
     if (this.state.touchLocked) return;
@@ -106,6 +131,7 @@ export class ViewerControls {
     this.viewer?.setTool(tool);
     this.panel(false);
     this.renderTool();
+    this.el("map-canvas").focus();
   }
   private name(title: string, initial: string, action: (name: string) => void) {
     this.nameAction = action;
@@ -170,7 +196,45 @@ export class ViewerControls {
   private bind() {
     const signal = this.controller.signal;
     this.click("toggle-panel", () => this.panel(this.el("map-panel").hidden));
-    this.click("close-panel", () => this.panel(false));
+    this.click("close-panel", () => this.panel(false, true));
+    this.click("sheet-dismiss", () => this.panel(false, true));
+    this.root.addEventListener(
+      "keydown",
+      (event) => {
+        if (
+          event.key === "Escape" &&
+          !this.el("map-panel").hidden &&
+          !this.root.querySelector("dialog[open]")
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          this.panel(false, true);
+        }
+      },
+      { signal },
+    );
+    for (const tab of toolTabs) {
+      const button = this.el(`tools-${tab}`);
+      this.click(`tools-${tab}`, () => this.selectTab(tab));
+      button.addEventListener(
+        "keydown",
+        (event) => {
+          if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
+            return;
+          event.preventDefault();
+          const index = toolTabs.indexOf(tab);
+          const next =
+            event.key === "Home"
+              ? 0
+              : event.key === "End"
+                ? 2
+                : (index + (event.key === "ArrowRight" ? 1 : 2)) % 3;
+          this.selectTab(toolTabs[next]!);
+          this.el(`tools-${this.toolTab}`).focus();
+        },
+        { signal },
+      );
+    }
     this.click("zoom-in", () => this.viewer?.zoomBy(1.5));
     this.click("zoom-out", () => this.viewer?.zoomBy(1 / 1.5));
     this.click("fit", () => this.viewer?.fit());
@@ -455,8 +519,14 @@ export class ViewerControls {
     this.el("rotation-value").textContent = `${rotation}°`;
   }
   private renderTool() {
+    const editing = this.tool !== "browse";
+    const sheetOpen = !this.el("map-panel").hidden;
+    this.root.querySelector<HTMLElement>(".viewer-controls")!.hidden =
+      this.state.touchLocked || editing || sheetOpen;
     this.el("tool-hint").hidden =
-      this.tool === "browse" || this.state.touchLocked;
+      !editing || this.state.touchLocked || sheetOpen;
+    this.el("placement-center").hidden =
+      !editing || this.state.touchLocked || sheetOpen;
     const messages: Record<Tool, string> = {
       browse: "",
       marker: "Tap a place to add a bookmark or note.",
@@ -518,8 +588,6 @@ export class ViewerControls {
       "aria-pressed",
       String(this.state.touchLocked),
     );
-    this.root.querySelector<HTMLElement>(".viewer-controls")!.hidden =
-      this.state.touchLocked;
     this.el("touch-locked").hidden = !this.state.touchLocked;
     for (const id of [
       "quick-invert",
@@ -535,6 +603,7 @@ export class ViewerControls {
       "zoom-in",
       "zoom-out",
       "fit",
+      "device-orientation",
     ])
       this.el<HTMLButtonElement | HTMLInputElement>(id).disabled =
         this.state.touchLocked;
@@ -633,6 +702,7 @@ export class ViewerControls {
   }
   dispose() {
     this.disposed = true;
+    this.panel(false);
     clearTimeout(this.unlockTimer);
     const saved = this.flush();
     this.controller.abort();

@@ -87,11 +87,11 @@ The original remains locally stored. Metadata is committed as ready **only after
 
 ## Using the viewer
 
-Drag to pan; pinch to zoom. Wheel/trackpad zoom is centered on the cursor. Double tap/click zooms in; at deep zoom it returns to fit. The floating controls go home, fit the map, and show zoom. Keyboard: arrows pan, `+`/`−` zoom, `0` or `F` fits, Escape returns home. The viewer supports native resolution and up to 400% CSS zoom; native-level pixels are not interpolated when enlarged.
+Drag to pan; pinch to zoom. Wheel/trackpad zoom is centered on the cursor. Double tap/click zooms in; at deep zoom it returns to fit. The top bar shows the map name, zoom and back button. A single bottom toolbar holds **Fit, Invert, Lock and Tools**. Tools opens a dismissible bottom sheet with **Display, Places and Routes** tabs; zoom buttons and secondary settings stay there. Tapping outside, Close or Escape dismisses the sheet. Keyboard: arrows pan, `+`/`−` zoom, `0` or `F` fits, Escape returns home when the sheet is closed. The viewer supports native resolution and up to 400% CSS zoom; native-level pixels are not interpolated when enlarged.
 
 ### Cave and quarry tools
 
-Open **☰** for map tools. The **◐** button toggles color inversion directly from the viewer.
+Open **Tools** for map tools. **Invert** toggles color inversion directly from the viewer. While placing a point or drawing a route, a contextual action bar replaces the normal toolbar; the center crosshair shows where **Place at center** will add a point.
 
 - **Offline check:** from the library, check all maps; from the viewer, check one map. The app checks cached shell files and reads/decodes every prepared tile in a worker, one at a time. Progress, cancellation, missing/damaged tile errors and the last successful check time are shown. This check uses local storage only.
 - **Resume:** reopening the app restores the last map and its center, zoom and rotation. Going home retains each map's camera but opens the library on the next launch.
