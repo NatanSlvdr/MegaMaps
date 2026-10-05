@@ -85,7 +85,9 @@ export function attachInteractions(
       if (!old) return;
       const before = [...points.values()],
         p = point(event);
-      const moved = old.moved || distance(old.start, p) > 6;
+      // Fingers wobble; a small slop keeps taps (route points) from becoming pans.
+      const slop = event.pointerType === "mouse" ? 4 : 10;
+      const moved = old.moved || distance(old.start, p) > slop;
       if (moved) lastTap.time = 0;
       points.set(event.pointerId, { ...p, start: old.start, moved });
       const after = [...points.values()];

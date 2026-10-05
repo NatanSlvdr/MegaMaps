@@ -362,7 +362,7 @@ document.addEventListener("keydown", (event) => {
     )
   )
     return;
-  if (event.key === "Escape") closeViewer();
+  if (event.key === "Escape" && !controls?.escape()) closeViewer();
   if (event.key === "0" || event.key.toLowerCase() === "f") viewer.fit();
 });
 element("install-help").addEventListener("click", () =>

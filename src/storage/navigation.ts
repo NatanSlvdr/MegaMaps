@@ -1,10 +1,18 @@
 import { database, transact } from "./database";
-import { defaultNavigation, type NavigationState } from "../viewer/navigation";
+import {
+  defaultNavigation,
+  normalizeNavigation,
+  type NavigationState,
+} from "../viewer/navigation";
 import type { MapRecord } from "../types";
-export const loadNavigation = async (mapId: string) =>
-  (await transact<NavigationState | undefined>("navigation", "readonly", (s) =>
-    s.get(mapId),
-  )) ?? defaultNavigation(mapId);
+export async function loadNavigation(mapId: string) {
+  const stored = await transact<NavigationState | undefined>(
+    "navigation",
+    "readonly",
+    (s) => s.get(mapId),
+  );
+  return stored ? normalizeNavigation(stored) : defaultNavigation(mapId);
+}
 export const lastMap = () =>
   transact<string | null | undefined>("settings", "readonly", (s) =>
     s.get("last-map"),

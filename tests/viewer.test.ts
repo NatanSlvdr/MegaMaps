@@ -117,22 +117,29 @@ test("renderer restores a rotated view, inverts only the map, keeps margins dark
     { navigation: state, overlay, onView() {}, onTap() {}, onMarker() {} },
   );
   try {
-    assert.equal(canvas.style.filter, "invert(1) brightness(0.4)");
+    // Before the overview is measured, assume a light sheet: invert + stretch.
+    assert.equal(
+      canvas.style.filter,
+      "invert(1) hue-rotate(180deg) contrast(1.471) brightness(0.92) brightness(0.4)",
+    );
     assert.equal(overlay.style.filter, "");
     step();
-    // CSS inversion turns this compensated margin into the original dark background.
+    // The margin is painted white so the inverting filter turns it pure black.
     assert.deepEqual(
       [...backing.getContext("2d").getImageData(0, 0, 1, 1).data],
-      [239, 233, 235, 255],
+      [255, 255, 255, 255],
     );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal(viewer.diagnostics().darkMode, "inverted");
+    assert.match(canvas.style.filter, /^invert\(1\) hue-rotate\(180deg\) contrast\([\d.]+\) brightness\([\d.]+\) brightness\(0\.4\)$/);
     assert.equal(overlay.querySelector("text")!.textContent, "<Entrance>");
     assert.equal(
-      overlay.querySelector("text")!.getAttribute("fill"),
-      "#c5e6a5",
+      overlay.querySelector("text")!.getAttribute("class"),
+      "overlay-label",
     );
     assert.match(
-      overlay.querySelector("g")!.getAttribute("transform")!,
-      /translate\(195,422\)/,
+      overlay.querySelector('[data-layer="places"] > g')!.getAttribute("transform")!,
+      /translate\(195(\.0)?,422(\.0)?\)/,
     );
     assert.equal(viewer.diagnostics().rotation, Math.PI / 2);
     viewer.rotateTo(0); // Default map rotation lock also blocks explicit controls.

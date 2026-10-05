@@ -25,17 +25,21 @@ import {
   type MapMarker,
 } from "./navigation";
 import { NavigationOverlay } from "./overlays";
+import { darkMode, measureTone, type DarkMode, type MapTone } from "./appearance";
 export interface ViewerOptions {
   navigation: NavigationState;
   overlay: SVGSVGElement;
   onView(): void;
   onTap(point: Point): void;
   onMarker(marker: MapMarker): void;
+  onAppearance?(mode: DarkMode): void;
 }
 export class Viewer {
   private navigation: NavigationState;
   private overlay?: NavigationOverlay;
   private tool: Tool = "browse";
+  private tone?: MapTone;
+  private dark = darkMode(undefined);
   private camera: Camera = { x: 0, y: 0, scale: 1 };
   private width = 1;
   private height = 1;
@@ -195,6 +199,8 @@ export class Viewer {
       if (this.disposed) bitmap.close();
       else {
         this.base = bitmap;
+        this.tone = measureTone(bitmap);
+        this.applyAppearance();
         this.invalidate();
       }
     } catch {
@@ -225,9 +231,11 @@ export class Viewer {
     if (animated) this.animate(camera);
     else this.setCamera(camera);
   }
-  setTool(tool: Tool) {
+  setTool(tool: Tool, routeId?: string) {
     this.interactions.reset();
     this.tool = tool;
+    this.overlay?.setEditing(tool === "route" ? routeId : undefined);
+    this.invalidate();
   }
   updateNavigation(state: NavigationState) {
     this.interactions.reset();
@@ -237,11 +245,19 @@ export class Viewer {
     this.invalidate();
   }
   private applyAppearance() {
-    this.canvas.style.filter = `${this.navigation.inverted ? "invert(1) " : ""}brightness(${this.navigation.dimming})`;
+    this.dark = darkMode(this.tone);
+    const filter = [
+      this.navigation.inverted ? this.dark.filter : "",
+      this.navigation.dimming < 1 ? `brightness(${this.navigation.dimming})` : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+    this.canvas.style.filter = filter;
     if (this.options)
       this.options.overlay.style.opacity = String(
-        Math.max(0.5, this.navigation.dimming),
+        Math.max(0.6, this.navigation.dimming),
       );
+    this.options?.onAppearance?.(this.dark);
   }
   zoomBy(factor: number) {
     if (this.navigation.touchLocked) return;
@@ -265,8 +281,13 @@ export class Viewer {
       y: this.camera.y + y,
     });
   }
-  rotateTo(rotation: number) {
-    if (this.navigation.touchLocked || this.navigation.rotationLocked) return;
+  // `deliberate` lets an explicit "north up" reset bypass the twist lock.
+  rotateTo(rotation: number, deliberate = false) {
+    if (
+      this.navigation.touchLocked ||
+      (this.navigation.rotationLocked && !deliberate)
+    )
+      return;
     this.interactions.reset();
     this.setCamera(
       transformAt(this.camera, this.camera.scale, rotation, {
@@ -287,6 +308,40 @@ export class Viewer {
       ),
     );
   }
+  // Frame a route or group of places, leaving room for the floating controls.
+  fitPoints(points: Point[]) {
+    if (this.navigation.touchLocked || !points.length) return;
+    this.interactions.reset();
+    const xs = points.map((p) => p.x),
+      ys = points.map((p) => p.y);
+    const minX = Math.min(...xs),
+      maxX = Math.max(...xs),
+      minY = Math.min(...ys),
+      maxY = Math.max(...ys);
+    const rotation = this.camera.rotation ?? 0,
+      c = Math.abs(Math.cos(rotation)),
+      s = Math.abs(Math.sin(rotation));
+    const width = c * (maxX - minX) + s * (maxY - minY),
+      height = s * (maxX - minX) + c * (maxY - minY);
+    const { min, max } = this.limits();
+    const scale = Math.max(
+      min,
+      Math.min(
+        max,
+        1,
+        (this.width - 96) / Math.max(1, width),
+        (this.height - 260) / Math.max(1, height),
+      ),
+    );
+    this.animate(
+      cameraAt(
+        { x: (minX + maxX) / 2, y: (minY + maxY) / 2 },
+        this.viewport(),
+        scale,
+        rotation,
+      ),
+    );
+  }
   centerPoint() {
     return screenToWorld(this.camera, {
       x: this.width / 2,
@@ -296,14 +351,27 @@ export class Viewer {
   private tap(screen: Point) {
     const point = screenToWorld(this.camera, screen);
     if (!insideImage(point, this.map)) return this.tool !== "browse";
+    const near = (target: Point, radius: number) => {
+      const p = worldToScreen(this.camera, target);
+      return Math.hypot(p.x - screen.x, p.y - screen.y) < radius;
+    };
+    const markers = this.navigation.layers.places ? this.navigation.markers : [];
+    if (this.tool === "route") {
+      // Snap route points onto saved places/checkpoints the user taps.
+      const snap = [
+        ...markers.map((m) => m.point),
+        ...(this.navigation.layers.checkpoints
+          ? this.navigation.checkpoints.map((c) => c.point)
+          : []),
+      ].find((target) => near(target, 24));
+      this.options?.onTap(snap ?? point);
+      return true;
+    }
     if (this.tool !== "browse") {
       this.options?.onTap(point);
       return true;
     }
-    const marker = this.navigation.markers.find((marker) => {
-      const p = worldToScreen(this.camera, marker.point);
-      return Math.hypot(p.x - screen.x, p.y - screen.y) < 22;
-    });
+    const marker = markers.find((marker) => near(marker.point, 24));
     if (marker) {
       this.options?.onMarker(marker);
       return true;
@@ -365,13 +433,15 @@ export class Viewer {
   private draw(now: number) {
     const ctx = this.canvas.getContext("2d", { alpha: false })!;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = this.navigation.inverted ? "#efe9eb" : "#101614";
+    // Margins and unloaded areas become pure black after the display filter.
+    const black = this.navigation.inverted ? this.dark.black : "#000";
+    ctx.fillStyle = black;
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.translate(this.camera.x, this.camera.y);
     ctx.rotate(this.camera.rotation ?? 0);
     ctx.scale(this.camera.scale, this.camera.scale);
-    ctx.fillStyle = this.navigation.inverted ? "#d9ced3" : "#26312c";
+    ctx.fillStyle = black;
     ctx.fillRect(0, 0, this.map.width, this.map.height);
     if (this.base)
       ctx.drawImage(this.base, 0, 0, this.map.width, this.map.height);
@@ -435,6 +505,7 @@ export class Viewer {
       zoom: this.camera.scale,
       rotation: this.camera.rotation ?? 0,
       inverted: this.navigation.inverted,
+      darkMode: this.dark.kind,
       touchLocked: this.navigation.touchLocked,
     };
   }
