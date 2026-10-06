@@ -69,4 +69,10 @@ export class NavigationPersistence {
     }
     return this.chain;
   }
+  // An explicit reload must stop if the final navigation write failed.
+  async flushForReload() {
+    await this.flush();
+    if (this.dirty)
+      throw new Error("Your latest changes could not be saved. Free some device storage and try again.");
+  }
 }

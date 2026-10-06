@@ -61,6 +61,9 @@ export const viewerMarkup = `
         ${layerRow("labels", "Names", icons.text)}
       </div>
       <button id="spotlight" class="panel-action spotlight-action">${icons.sparkle}<span>Highlight</span></button>
+      <h3>App</h3>
+      <button class="panel-action update-app">${icons.rotateRight}<span>Check for updates</span></button>
+      <p class="field-help">Installs the latest version and reloads. Your saved maps, places and routes stay on this device.</p>
     </div>
     <div id="sheet-saved" data-panel="saved" data-title="Saved" hidden>
       <h3 class="section-title routes">${icons.route}<span>Routes</span><small id="saved-routes-count"></small></h3>

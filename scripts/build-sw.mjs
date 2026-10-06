@@ -48,6 +48,10 @@ self.addEventListener('activate', event => {
   })());
 });
 self.addEventListener('message', event => {
+  if (event.data?.type === 'skip-waiting') {
+    event.waitUntil(self.skipWaiting());
+    return;
+  }
   if (event.data?.type !== 'verify-shell' || !event.ports[0]) return;
   event.waitUntil((async () => {
     try {
@@ -57,7 +61,7 @@ self.addEventListener('message', event => {
         const response = await cache.match(url);
         if (!response || !(await response.arrayBuffer()).byteLength) missing.push(url);
       }
-      event.ports[0].postMessage({ ready: missing.length === 0, missing, assets: ASSETS.length });
+      event.ports[0].postMessage({ ready: missing.length === 0, missing, assets: ASSETS.length, version: CACHE });
     } catch { event.ports[0].postMessage({ ready: false, missing: ['Application shell'] }); }
   })());
 });
@@ -75,6 +79,9 @@ self.addEventListener('fetch', event => {
 const hash = createHash("sha256").update(worker);
 for (const path of paths.sort()) hash.update(await readFile(path));
 const cacheName = `map-viewer-shell-${hash.digest("hex").slice(0, 16)}`;
+// Stamp the loaded HTML too: an open page can be older than its active worker.
+const html = await readFile("dist/index.html", "utf8");
+await writeFile("dist/index.html", html.replace("__APP_BUILD__", cacheName));
 await writeFile(
   "dist/sw.js",
   `

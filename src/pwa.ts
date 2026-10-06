@@ -6,6 +6,7 @@ export async function registerOfflineShell(onStatus: (ready: boolean) => void) {
   try {
     const registration = await navigator.serviceWorker.register("/sw.js", {
       scope: "/",
+      updateViaCache: "none",
     });
     await navigator.serviceWorker.ready;
     onStatus(true);

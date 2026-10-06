@@ -15,6 +15,7 @@ import {
 } from "../viewer/navigation";
 import { icons } from "./icons";
 import { placeIcon } from "./place-icon";
+import { popoverPosition } from "./popover-position";
 const sheets = ["display", "saved"] as const;
 const copyPoints = (points: Point[]) => points.map((point) => ({ ...point }));
 type Sheet = (typeof sheets)[number];
@@ -58,6 +59,8 @@ export class ViewerControls {
   private confirmTimer?: ReturnType<typeof setTimeout>;
   private confirming?: string;
   private rowMenu?: string;
+  private rowMenuAnchor?: HTMLElement;
+  private rowPopover?: HTMLElement;
   /** Add was tapped: Place / Route float above the pill until one is picked. */
   private choosing = false;
   private openSheet?: Sheet;
@@ -149,10 +152,7 @@ export class ViewerControls {
     this.choosing = false;
     this.openSheet = name;
     // Row menus start closed each time a panel opens.
-    if (this.rowMenu && name !== previous) {
-      this.rowMenu = undefined;
-      this.render();
-    }
+    if (name !== previous) this.closeRowMenu();
     this.el("sheet").hidden = !name;
     // Tints the panel with its pill button's neon color.
     this.el("sheet").dataset.panel = name ?? "";
@@ -438,9 +438,15 @@ export class ViewerControls {
       if (!this.rowMenu) return;
       const target = event.target as Element | null;
       if (target?.closest?.(".row-popover, .row-more")) return;
-      this.rowMenu = undefined;
-      this.render();
+      this.closeRowMenu();
     });
+    this.on(this.root.querySelector(".sheet-content")!, "scroll", () =>
+      this.closeRowMenu(),
+    );
+    this.on(window, "resize", () => this.closeRowMenu());
+    if (window.visualViewport)
+      this.on(window.visualViewport, "resize", () => this.closeRowMenu());
+    this.on(this.el("sheet"), "animationend", () => this.positionRowMenu());
     this.on(document, "visibilitychange", () => {
       if (document.hidden) void this.flush();
     });
@@ -582,13 +588,7 @@ export class ViewerControls {
   escape() {
     if (this.root.querySelector("dialog[open]")) return false;
     if (this.rowMenu) {
-      const key = this.rowMenu;
-      this.rowMenu = undefined;
-      this.render();
-      [...this.root.querySelectorAll<HTMLElement>(".navigation-row")]
-        .find((row) => row.dataset.row === key)
-        ?.querySelector<HTMLElement>(".row-more")
-        ?.focus();
+      this.closeRowMenu(true);
     } else if (this.openSheet) this.sheet(undefined, true);
     else if (this.choosing) this.choose(false);
     else if (this.tool === "route") this.finishRoute();
@@ -686,44 +686,90 @@ export class ViewerControls {
     toggle.setAttribute("aria-haspopup", "menu");
     toggle.setAttribute("aria-expanded", String(open));
     toggle.addEventListener("click", () => {
-      this.rowMenu = open ? undefined : options.key;
-      this.render();
-      if (!open)
-        this.root.querySelector<HTMLElement>(".row-popover button")?.focus();
+      const wasOpen = this.rowMenu === options.key;
+      this.closeRowMenu();
+      if (wasOpen) return;
+      this.rowMenu = options.key;
+      showMenu();
+      this.positionRowMenu();
+      this.rowPopover
+        ?.querySelector<HTMLElement>("button")
+        ?.focus({ preventScroll: true });
     });
     main.append(button, toggle);
     row.append(main);
     container.append(row);
-    if (!open) return;
-    // A small menu floating beside ⋯; Delete sits last, set apart in red.
-    const menu = document.createElement("div");
-    menu.className = "row-popover";
-    menu.setAttribute("role", "menu");
-    menu.setAttribute("aria-label", options.label);
-    for (const extra of options.actions) {
-      const action = document.createElement("button");
-      action.className = extra.danger ? "popover-item danger" : "popover-item";
-      action.setAttribute("role", "menuitem");
-      const label = document.createElement("span");
-      label.textContent = extra.label;
-      action.innerHTML = extra.icon;
-      action.append(label);
-      action.addEventListener("click", () => {
-        if (!extra.danger) this.rowMenu = undefined;
-        extra.action();
-      });
-      menu.append(action);
+    // Render outside the scrolling list so overflow cannot clip the actions.
+    const showMenu = () => {
+      const menu = document.createElement("div");
+      menu.id = "saved-row-menu";
+      this.rowPopover = menu;
+      this.rowMenuAnchor = toggle;
+      toggle.setAttribute("aria-expanded", "true");
+      toggle.setAttribute("aria-controls", menu.id);
+      menu.className = "row-popover";
+      menu.setAttribute("role", "menu");
+      menu.setAttribute("aria-label", options.label);
+      for (const extra of options.actions) {
+        const action = document.createElement("button");
+        action.className = extra.danger ? "popover-item danger" : "popover-item";
+        action.setAttribute("role", "menuitem");
+        const label = document.createElement("span");
+        label.textContent = extra.danger
+          ? this.deleteLabel(options.key)
+          : extra.label;
+        action.innerHTML = extra.icon;
+        action.append(label);
+        action.addEventListener("click", () => {
+          if (!extra.danger) this.closeRowMenu();
+          extra.action();
+        });
+        menu.append(action);
+      }
+      this.root.append(menu);
+    };
+    if (open) showMenu();
+  }
+  // Dismiss without rebuilding rows: pointerdown must not remove the pending click target.
+  private closeRowMenu(returnFocus = false) {
+    if (!this.rowMenu && !this.rowPopover) return;
+    const anchor = this.rowMenuAnchor;
+    this.rowPopover?.remove();
+    anchor?.setAttribute("aria-expanded", "false");
+    anchor?.removeAttribute("aria-controls");
+    this.rowMenu = undefined;
+    this.rowMenuAnchor = undefined;
+    this.rowPopover = undefined;
+    if (this.confirming && this.confirming !== "cancel-route") {
+      clearTimeout(this.confirmTimer);
+      this.confirming = undefined;
     }
-    row.classList.add("open");
-    row.append(menu);
-    // Opens upward when there's no room below in the panel.
-    const list = this.root.querySelector(".sheet-content")?.getBoundingClientRect?.();
-    const box = menu.getBoundingClientRect?.();
-    if (list && box && box.bottom > list.bottom - 8 && box.height)
-      menu.classList.add("up");
+    if (returnFocus) anchor?.focus({ preventScroll: true });
+  }
+  private positionRowMenu() {
+    const menu = this.rowPopover;
+    const anchor = this.rowMenuAnchor;
+    if (!menu || !anchor) return;
+    const bounds = this.el("sheet").getBoundingClientRect();
+    const origin = this.root.getBoundingClientRect();
+    menu.style.width = `${Math.max(0, Math.min(216, bounds.width - 16))}px`;
+    const position = popoverPosition(anchor.getBoundingClientRect(), bounds, {
+      width: 216,
+      height: (menu.scrollHeight || 0) + 2,
+    });
+    menu.style.left = `${position.left - origin.left}px`;
+    menu.style.top = `${position.top - origin.top}px`;
+    menu.style.maxHeight = `${position.maxHeight}px`;
   }
   // Two taps to delete: the first arms the button for a few seconds.
   private confirmDelete(key: string, action: () => void) {
+    // Keep the menu and scrolled list in place while arming or expiring Delete.
+    const updateLabel = () => {
+      if (this.rowMenu !== key) return;
+      const label = this.rowPopover?.querySelector(".danger span");
+      if (label) label.textContent = this.deleteLabel(key);
+      this.positionRowMenu();
+    };
     return () => {
       if (this.confirming === key) {
         clearTimeout(this.confirmTimer);
@@ -735,9 +781,9 @@ export class ViewerControls {
       clearTimeout(this.confirmTimer);
       this.confirmTimer = setTimeout(() => {
         this.confirming = undefined;
-        this.render();
+        updateLabel();
       }, 3000);
-      this.render();
+      updateLabel();
     };
   }
   private deleteLabel(key: string) {
@@ -768,6 +814,14 @@ export class ViewerControls {
     this.el("saved-places-count").textContent = String(counts.places);
     // Fine rotation only appears once twisting is unlocked.
     this.el("rotation-controls").hidden = this.state.rotationLocked;
+    const focusedMenuIndex = this.rowPopover
+      ? [...this.rowPopover.querySelectorAll("button")].findIndex(
+          (button) => button === document.activeElement,
+        )
+      : -1;
+    this.rowPopover?.remove();
+    this.rowPopover = undefined;
+    this.rowMenuAnchor = undefined;
     const markers = this.el("marker-list"),
       routes = this.el("route-list");
     markers.replaceChildren();
@@ -860,6 +914,12 @@ export class ViewerControls {
         p.textContent = empty;
         container.append(p);
       }
+    // Measure only after all rows are back in the list and the panel has its final height.
+    this.positionRowMenu();
+    if (focusedMenuIndex >= 0)
+      this.root
+        .querySelectorAll<HTMLButtonElement>(".row-popover button")
+        [focusedMenuIndex]?.focus({ preventScroll: true });
     this.renderView();
     this.renderTool();
   }
@@ -868,6 +928,9 @@ export class ViewerControls {
   }
   async flush() {
     await this.persistence.flush();
+  }
+  async prepareForUpdate() {
+    await this.persistence.flushForReload();
   }
   dispose() {
     // Leaving mid-route keeps a usable route rather than an orphan draft.

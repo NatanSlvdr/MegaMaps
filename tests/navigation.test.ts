@@ -16,7 +16,7 @@ import {
   restoreView,
 } from "../src/viewer/navigation";
 import { pyramid } from "../src/processing/pyramid";
-import { saveMap, transact } from "../src/storage/database";
+import { database, saveMap, transact } from "../src/storage/database";
 import {
   saveNavigation,
   loadNavigation,
@@ -155,4 +155,29 @@ test("notes, routes and settings persist; deletion blocks late writes", async ()
   );
   await setLastMap(null);
   assert.equal(await lastMap(), null);
+});
+
+test("update preparation saves pending changes and blocks reload after a failed write", async () => {
+  await saveMap(map("update-save"));
+  const state = defaultNavigation("update-save");
+  const errors: unknown[] = [];
+  const persistence = new NavigationPersistence(() => state, (error) => errors.push(error));
+  state.dimming = 0.45;
+  persistence.changed();
+  await persistence.flushForReload();
+  assert.equal((await loadNavigation(state.mapId)).dimming, 0.45);
+
+  const db = await database();
+  const transaction = db.transaction;
+  try {
+    db.transaction = () => { throw new DOMException("Storage full", "QuotaExceededError"); };
+    state.dimming = 0.7;
+    persistence.changed();
+    await assert.rejects(persistence.flushForReload(), /could not be saved/);
+    assert.equal(errors.length, 1);
+  } finally {
+    db.transaction = transaction;
+  }
+  await persistence.flushForReload();
+  assert.equal((await loadNavigation(state.mapId)).dimming, 0.7, "retry retains the unsaved change");
 });

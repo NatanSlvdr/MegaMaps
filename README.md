@@ -97,6 +97,8 @@ The original remains locally stored. Metadata is committed as ready **only after
 
 ## Using the viewer
 
+**Updating without reinstalling:** use **View › App › Check for updates**, or **Check for updates** in the library. While online, the app downloads and verifies the latest application files, saves pending navigation changes, and reloads when a newer version is ready. Maps, places, routes and settings stay in their existing on-device storage. If installation or saving fails, the page stays open. Reinstalling is unnecessary for ordinary updates; iOS installation settings such as the status-bar style may still require a fresh Home Screen installation.
+
 Drag to pan; pinch to zoom. **Double-tap and drag** down/up zooms with one thumb; a plain double tap zooms in (at deep zoom it returns to fit). **Long-press** the map to drop a place. Wheel/trackpad zoom is centered on the cursor.
 
 The map fills the screen. Fingers move it, so there are no zoom or pan buttons; only a few controls float over it:
@@ -157,7 +159,7 @@ For device profiling, `window.MapViewer.diagnostics()` reports decoded tile byte
 - Lossless tile storage can substantially exceed original size. A detailed 27.4 MiB JPEG used 168.4 MiB of tiles plus temporary coefficient files of 232.2 MiB during processing. A quota preflight is only an estimate; actual quota errors are handled and rolled back.
 - Import must remain in the foreground until complete. Mobile browsers can suspend workers or kill a PWA in the background. Interrupted work is cleaned up at next launch rather than resumed.
 - Browser storage is origin-local. `persist()` is requested but can be refused. Clearing website data, storage eviction, or uninstall behavior can remove imported maps; keep your source files. HTTPS, hostname, and port changes create a different library.
-- The shell is precached atomically, including the worker and WASM. Updates wait until the old app windows close. Deployment currently assumes the origin root, not a subdirectory.
+- The shell is precached atomically, including the worker and WASM. A new worker activates after installation; **Check for updates** reloads the current page after verifying the shell and saving pending changes. Deployment currently assumes the origin root, not a subdirectory.
 - Real iOS/Android installation, Airplane Mode cold launch, process-memory ceilings, and sustained touch FPS still require physical-device validation.
 - Screen orientation is left to the phone; map rotation locking is application-controlled. Places and routes are manually entered, without positioning sensors, pathfinding or scale calibration.
 

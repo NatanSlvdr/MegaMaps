@@ -5,6 +5,7 @@ import { payloadStore, deleteStoredMap } from "./storage/payloads";
 import { importMap } from "./processing/import";
 import { Viewer } from "./viewer/viewer";
 import { registerOfflineShell, verifyOfflineShell } from "./pwa";
+import { checkForAppUpdate } from "./app-update";
 import { icons } from "./ui/icons";
 import { formatBytes } from "./ui/format";
 import { viewerMarkup } from "./ui/viewer-markup";
@@ -15,10 +16,10 @@ import { verifyMap } from "./storage/verify";
 const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
   <main class="home" id="home">
-    <header class="header"><h1>Map Viewer</h1><span class="offline-status" id="offline-status" role="status"><i></i><span>Getting ready</span></span></header>
-    <div class="library-actions"><button class="primary import-trigger">${icons.plus}<span>Import Map</span></button><button id="check-all-offline" class="secondary">Check offline access</button></div>
-    <section class="library" aria-labelledby="library-title"><div class="section-heading"><h2 id="library-title">Maps <span id="map-count">0</span></h2></div><div class="map-list" id="map-grid"></div><div class="empty" id="empty" hidden><h3>No maps imported</h3><p>Import a JPEG, PNG or WebP to get started.</p></div></section>
-    <footer><span>Stored on this device</span><button id="install-help" class="text-button">Add to Home Screen</button></footer>
+    <header class="header"><div class="library-brand"><span class="library-logo">${icons.map}</span><h1>Map Viewer</h1></div><span class="offline-status" id="offline-status" role="status"><i></i><span>Getting ready</span></span></header>
+    <div class="library-actions"><button class="library-action import-trigger">${icons.plus}<span>Import map</span></button><button id="check-all-offline" class="library-action">${icons.check}<span>Check offline access</span></button></div>
+    <section class="library" aria-labelledby="library-title"><div class="section-heading"><h2 id="library-title">Your maps <span id="map-count">0</span></h2></div><div class="map-list" id="map-grid"></div><div class="empty" id="empty" hidden><span class="empty-icon">${icons.map}</span><h3>Your next route starts here</h3><p>Import a JPEG, PNG or WebP map.<br>Keep it with you, even offline.</p></div></section>
+    <footer class="library-footer"><span>Stored on this device</span><div class="library-dock"><button class="update-app">${icons.rotateRight}<span>Check for updates</span></button><button id="install-help">${icons.plus}<span>Add to Home Screen</span></button></div></footer>
   </main>
   <section id="viewer" class="viewer" aria-label="Map viewer" hidden>${viewerMarkup}</section>
   <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" hidden>
@@ -39,6 +40,7 @@ let controls: ViewerControls | undefined;
 let pendingViewSave = Promise.resolve();
 let openVersion = 0;
 let checking: AbortController | undefined;
+let updating = false;
 let viewer: Viewer | undefined,
   currentMap: MapRecord | undefined,
   maps: MapRecord[] = [];
@@ -331,6 +333,46 @@ progressDialog.addEventListener("cancel", (event) => {
   checking?.abort();
 });
 element("message-close").addEventListener("click", () => messageDialog.close());
+messageDialog.addEventListener("cancel", (event) => {
+  if (updating) event.preventDefault();
+});
+for (const button of document.querySelectorAll<HTMLButtonElement>(".update-app"))
+  button.addEventListener("click", () => void updateApp());
+
+// Keep the current map/session and wait for durable saves before reloading.
+async function updateApp() {
+  if (updating) return;
+  if (importing || checking) {
+    showMessage("App update", "Finish the current import or offline check, then try again.");
+    return;
+  }
+  if (!import.meta.env.PROD || !("serviceWorker" in navigator)) {
+    showMessage("App update", "App updates are available in the installed app or on the live HTTPS site.");
+    return;
+  }
+  updating = true;
+  const close = element<HTMLButtonElement>("message-close");
+  close.disabled = true;
+  showMessage("Checking for updates", "Keep the app open while the update downloads. Your saved maps, places and routes are kept.");
+  try {
+    await mutate(async () => {
+      const loadedVersion = document.querySelector<HTMLMetaElement>('meta[name="app-build"]')?.content ?? "";
+      if (!(await checkForAppUpdate(loadedVersion))) {
+        showMessage("You’re up to date", "You already have the latest version. Your saved data is unchanged.");
+        return;
+      }
+      await pendingViewSave;
+      await controls?.prepareForUpdate();
+      showMessage("Update ready", "Your changes are saved. Reloading…");
+      window.location.reload();
+    });
+  } catch (error) {
+    showMessage("Couldn’t update the app", `${error instanceof Error ? error.message : String(error)} You can keep using the current app and try again later.`);
+  } finally {
+    updating = false;
+    close.disabled = false;
+  }
+}
 element("delete-cancel").addEventListener("click", () => deleteDialog.close());
 element("delete-confirm").addEventListener("click", () => {
   const map = deleting;

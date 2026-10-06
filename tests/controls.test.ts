@@ -281,7 +281,10 @@ test("viewer controls: menu pill, panels, smart dark, layers, highlight, rotatio
     click("open-saved");
     assert.equal(popover(), null);
     assert.match(placeMore().getAttribute("aria-label")!, /Actions for <Entrance>/);
-    placeMore().dispatchEvent(new window.Event("click"));
+    const originalMore = placeMore();
+    originalMore.dispatchEvent(new window.Event("click"));
+    assert.equal(placeMore(), originalMore, "opening a menu keeps the tapped row intact");
+    assert.equal(popover()?.parentElement, root, "the menu escapes the scroll container's clipping");
     assert.equal(popover()?.getAttribute("role"), "menu");
     assert.deepEqual(
       [...popover()!.querySelectorAll("button")].map((b) => b.textContent),
@@ -291,6 +294,22 @@ test("viewer controls: menu pill, panels, smart dark, layers, highlight, rotatio
     // Tapping elsewhere closes it; so does Escape, before the panel.
     document.body.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
     assert.equal(popover(), null);
+    assert.equal(placeMore(), originalMore, "outside pointerdown must not replace pending click targets");
+    placeMore().dispatchEvent(new window.Event("click"));
+    const jump = el("marker-list").querySelector<HTMLButtonElement>(".navigation-jump")!;
+    jump.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
+    assert.equal(popover(), null);
+    assert.equal(jump.isConnected, true);
+    jump.dispatchEvent(new window.Event("click"));
+    assert.equal(sheet.hidden, true, "the same tap can still jump to the place");
+    assert.deepEqual(jumps.at(-1), state.markers[0]!.point);
+    click("open-saved");
+    placeMore().dispatchEvent(new window.Event("click"));
+    root.querySelector(".sheet-content")!.dispatchEvent(new window.Event("scroll"));
+    assert.equal(popover(), null, "scrolling dismisses the menu instead of leaving it at a stale position");
+    placeMore().dispatchEvent(new window.Event("click"));
+    window.dispatchEvent(new window.Event("resize"));
+    assert.equal(popover(), null, "rotation/resize dismisses the menu");
     placeMore().dispatchEvent(new window.Event("click"));
     key(root, "Escape");
     assert.equal(popover(), null);
@@ -364,7 +383,7 @@ test("viewer controls: menu pill, panels, smart dark, layers, highlight, rotatio
       el("route-list")
         .querySelector(".row-more")!
         .dispatchEvent(new window.Event("click"));
-      [...el("route-list").querySelectorAll("button")]
+      [...popover()!.querySelectorAll("button")]
         .find((b) => b.textContent === "Edit points")!
         .dispatchEvent(new window.Event("click"));
     };
@@ -415,7 +434,7 @@ test("viewer controls: menu pill, panels, smart dark, layers, highlight, rotatio
         more.dispatchEvent(new window.Event("click"));
     };
     const rowButton = (label: RegExp) =>
-      [...el("route-list").querySelectorAll("button")].find((b) =>
+      [...popover()!.querySelectorAll("button")].find((b) =>
         label.test(b.textContent!),
       )!;
     openMenu();
@@ -434,9 +453,18 @@ test("viewer controls: menu pill, panels, smart dark, layers, highlight, rotatio
     );
     assert.equal(popover(), null, "the menu closes after an action");
     openMenu();
+    const deleteMenu = popover();
+    const routeRow = el("route-list").firstElementChild;
     rowButton(/^Delete$/).dispatchEvent(new window.Event("click"));
     assert.equal(state.routes.length, 1);
+    assert.equal(popover(), deleteMenu, "confirmation keeps the same menu in place");
+    assert.equal(el("route-list").firstElementChild, routeRow, "confirmation leaves the scrollable rows intact");
     assert.notEqual(popover(), null, "the menu stays open for the second delete tap");
+    key(root, "Escape");
+    openMenu();
+    assert.ok(rowButton(/^Delete$/), "reopening clears the pending delete label");
+    rowButton(/^Delete$/).dispatchEvent(new window.Event("click"));
+    assert.equal(state.routes.length, 1, "reopening must require a fresh confirmation");
     rowButton(/Tap again/).dispatchEvent(new window.Event("click"));
     assert.equal(state.routes.length, 0);
 
