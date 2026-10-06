@@ -72,16 +72,34 @@ test("stored navigation from before layers gains every default", () => {
   const state = normalizeNavigation({
     mapId: "old",
     inverted: false,
-    layers: { routes: false } as never,
+    layers: { routes: false, position: false } as never,
+    position: { point: { x: 1, y: 2 }, updated: 3 },
+    checkpoints: [
+      { id: "check", point: { x: 4, y: 5 }, label: "Junction", confirmed: 6 },
+    ],
   });
   assert.equal(state.inverted, false, "an explicit choice is kept");
   assert.deepEqual(state.layers, {
     places: true,
     routes: false,
-    checkpoints: true,
-    position: true,
     labels: true,
   });
+  assert.equal("position" in state, false, "the removed manual position is dropped");
+  assert.equal("checkpoints" in state, false);
+  assert.deepEqual(
+    state.markers,
+    [
+      {
+        id: "check",
+        point: { x: 4, y: 5 },
+        label: "Junction",
+        note: "",
+        kind: "landmark",
+        created: 6,
+      },
+    ],
+    "old checkpoints become landmark places",
+  );
   assert.deepEqual(state.routes, []);
   assert.equal(normalizeNavigation({ mapId: "new" }).inverted, true);
 });

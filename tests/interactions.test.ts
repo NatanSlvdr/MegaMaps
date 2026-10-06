@@ -194,3 +194,73 @@ test("long press fires once without panning; moving or editing cancels it", asyn
   assert.equal(h.taps(), 1, "while editing, a slow tap still places a point");
   h.interactions.dispose();
 });
+
+test("while editing, a finger on a point drags it instead of the map", () => {
+  // Fast pans start inertia; it isn't under test here.
+  for (const name of ["requestAnimationFrame", "cancelAnimationFrame"])
+    Object.defineProperty(globalThis, name, { value: () => 0, configurable: true });
+  const canvas = new Canvas();
+  let camera: Camera = { x: 0, y: 0, scale: 1 },
+    editing = false,
+    taps = 0;
+  const log: string[] = [];
+  const handle = { x: 100, y: 100 };
+  const interactions = attachInteractions(
+    canvas as unknown as HTMLCanvasElement,
+    {
+      getCamera: () => camera,
+      setCamera: (value) => {
+        camera = value;
+      },
+      limits: () => ({ min: 0.01, max: 4 }),
+      animate: (value) => {
+        camera = value;
+      },
+      stopAnimation() {},
+      editing: () => editing,
+      tap: () => {
+        taps++;
+        return true;
+      },
+      grab: (p) => Math.hypot(p.x - handle.x, p.y - handle.y) < 28,
+      drag: (p) => log.push(`drag ${p.x},${p.y}`),
+      drop: (p) => log.push(`drop ${p.x},${p.y}`),
+      cancelDrag: () => log.push("cancel"),
+    },
+  );
+  // Browsing: the same gesture pans.
+  emit(canvas, "pointerdown", pointer(1, 100, 100));
+  emit(canvas, "pointermove", pointer(1, 160, 100));
+  emit(canvas, "pointerup", pointer(1, 160, 100));
+  assert.equal(camera.x, 60);
+  assert.deepEqual(log, []);
+  editing = true;
+  camera = { x: 0, y: 0, scale: 1 };
+  emit(canvas, "pointerdown", pointer(1, 105, 95));
+  emit(canvas, "pointermove", pointer(1, 108, 95));
+  assert.deepEqual(log, [], "wobble inside the slop does not drag");
+  emit(canvas, "pointermove", pointer(1, 160, 140));
+  emit(canvas, "pointerup", pointer(1, 160, 140));
+  assert.deepEqual(log, ["drag 160,140", "drop 160,140"]);
+  assert.deepEqual(camera, { x: 0, y: 0, scale: 1 }, "the map stays put");
+  assert.equal(taps, 0);
+  // A still touch on a point is still a tap.
+  emit(canvas, "pointerdown", pointer(1, 100, 100));
+  emit(canvas, "pointerup", pointer(1, 100, 100));
+  assert.equal(taps, 1);
+  // Away from points, editing still pans.
+  emit(canvas, "pointerdown", pointer(1, 300, 300));
+  emit(canvas, "pointermove", pointer(1, 340, 300));
+  emit(canvas, "pointerup", pointer(1, 340, 300));
+  assert.equal(camera.x, 40);
+  // A second finger puts the point back and pinches instead.
+  log.length = 0;
+  emit(canvas, "pointerdown", pointer(1, 100, 100));
+  emit(canvas, "pointermove", pointer(1, 150, 100));
+  emit(canvas, "pointerdown", pointer(2, 300, 300));
+  assert.deepEqual(log, ["drag 150,100", "cancel"]);
+  emit(canvas, "pointerup", pointer(2, 300, 300));
+  emit(canvas, "pointerup", pointer(1, 150, 100));
+  assert.deepEqual(log, ["drag 150,100", "cancel"], "no drop after a cancel");
+  interactions.dispose();
+});

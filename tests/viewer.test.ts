@@ -7,6 +7,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Viewer } from "../src/viewer/viewer";
+import { worldToScreen, type Camera, type Point } from "../src/viewer/camera";
 import { defaultNavigation } from "../src/viewer/navigation";
 import { payloadStore } from "../src/storage/payloads";
 import { installPlatform, nativeStats } from "./node-platform";
@@ -108,13 +109,21 @@ test("renderer restores a rotated view, inverts only the map, keeps margins dark
     created: 0,
   });
   const overlay = document.querySelector<SVGSVGElement>("svg")!;
-  const errors: string[] = [];
+  const errors: string[] = [],
+    drops: boolean[] = [];
   const viewer = new Viewer(
     canvas,
     map,
     () => {},
     (error) => errors.push(error),
-    { navigation: state, overlay, onView() {}, onTap() {}, onMarker() {} },
+    {
+      navigation: state,
+      overlay,
+      onView() {},
+      onTap() {},
+      onMarker() {},
+      onDrop: (moved) => drops.push(moved),
+    },
   );
   try {
     // Before the overview is measured, assume a light sheet: invert + stretch.
@@ -162,6 +171,61 @@ test("renderer restores a rotated view, inverts only the map, keeps margins dark
     state.inverted = false;
     viewer.updateNavigation(state);
     assert.equal(canvas.style.filter, "brightness(0.4)");
+    assert.equal(overlay.style.opacity, "0.6");
+    // The default dim keeps routes and places at full strength.
+    state.dimming = defaultNavigation(map.id).dimming;
+    assert.ok(state.dimming < 1);
+    viewer.updateNavigation(state);
+    assert.equal(canvas.style.filter, `brightness(${state.dimming})`);
+    assert.equal(overlay.style.opacity, "1");
+
+    // Editing a route: its points drag; a point snapped onto a place moves
+    // alone, and dropping one on a place snaps it there.
+    state.touchLocked = false;
+    const place = state.markers[0]!;
+    state.routes.push({
+      id: "route",
+      name: "Route",
+      points: [place.point, { x: 100, y: 100 }],
+      created: 0,
+      draft: true,
+    });
+    viewer.updateNavigation(state);
+    const internals = viewer as unknown as {
+      camera: Camera;
+      grab(screen: Point): boolean;
+      drop(screen: Point): void;
+    };
+    const screen = (p: Point) => worldToScreen(internals.camera, p);
+    assert.equal(internals.grab(screen(place.point)), false, "not while browsing");
+    viewer.setTool("route", "route");
+    assert.equal(internals.grab(screen({ x: 450, y: 450 })), false, "only on points");
+    assert.equal(internals.grab(screen(place.point)), true);
+    internals.drop(screen({ x: 300, y: 200 }));
+    const [first, second] = state.routes[0]!.points;
+    assert.deepEqual(
+      [Math.round(first!.x), Math.round(first!.y)],
+      [300, 200],
+    );
+    assert.deepEqual(place.point, { x: 256, y: 256 }, "the place stays put");
+    assert.equal(internals.grab(screen(second!)), true);
+    internals.drop(screen({ x: 258, y: 255 }));
+    assert.deepEqual(state.routes[0]!.points[1], { x: 256, y: 256 });
+    assert.notEqual(state.routes[0]!.points[1], place.point);
+    assert.equal(internals.grab(screen(place.point)), true);
+    internals.drop(screen({ x: -400, y: 900 }));
+    assert.deepEqual(state.routes[0]!.points[1], { x: 0, y: 512 }, "kept on the map");
+    assert.deepEqual(drops, [true, true, true]);
+    // Moving a place: only that pin is grabbed.
+    viewer.setTool("move", place.id);
+    assert.equal(internals.grab(screen({ x: 0, y: 512 })), false);
+    assert.equal(internals.grab(screen(place.point)), true);
+    internals.drop(screen({ x: 128, y: 64 }));
+    assert.deepEqual(
+      [Math.round(place.point.x), Math.round(place.point.y)],
+      [128, 64],
+    );
+    viewer.setTool("browse");
   } finally {
     viewer.dispose();
     // Settle already-started bitmap loads, which must close after disposal.

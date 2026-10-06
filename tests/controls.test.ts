@@ -10,7 +10,7 @@ import { loadNavigation } from "../src/storage/navigation";
 import type { Point } from "../src/viewer/camera";
 import type { MapRecord } from "../src/types";
 
-test("viewer controls: sheets, smart dark, layers, highlight, places, checkpoints, routes and hold-unlock", async () => {
+test("viewer controls: menu pill, panels, smart dark, layers, highlight, rotation lock, places and routes", async () => {
   const { window, document } = parseHTML(
     `<html><body><section id="viewer">${viewerMarkup}</section></body></html>`,
   );
@@ -45,19 +45,19 @@ test("viewer controls: sheets, smart dark, layers, highlight, places, checkpoint
   };
   await saveMap(map);
   const state = defaultNavigation("controls");
-  let rotation = 0,
-    fitted = 0;
+  let rotation = 0;
   const tools: string[] = [],
     framed: Point[][] = [],
     jumps: Point[] = [];
-  const controls = new ViewerControls(root, map, state, () => {});
+  // A touch lock saved by an older version must not trap the map.
+  state.touchLocked = true;
+  const controls = new ViewerControls(root, map, state);
+  assert.equal(state.touchLocked, false);
   controls.attach({
     setTool(tool: string) {
       tools.push(tool);
     },
     updateNavigation() {},
-    zoomBy() {},
-    panBy() {},
     rotateTo(value: number) {
       rotation = value;
     },
@@ -66,10 +66,6 @@ test("viewer controls: sheets, smart dark, layers, highlight, places, checkpoint
     },
     fitPoints(points: Point[]) {
       framed.push(points);
-    },
-    centerPoint: () => ({ x: 500, y: 600 }),
-    fit() {
-      fitted++;
     },
   });
   const el = (id: string) => document.getElementById(id)!;
@@ -98,25 +94,71 @@ test("viewer controls: sheets, smart dark, layers, highlight, places, checkpoint
     toolBar = el("tool-bar"),
     stage = el("map-stage");
   try {
-    // Browsing: dock + zoom rail, no sheet.
+    // Browsing: just the menu pill, no panel, no zoom/pan/position buttons.
     assert.equal(sheet.hidden, true);
     assert.equal(dock.hidden, false);
-    assert.equal(el("zoom-rail").hidden, false);
+    for (const gone of [
+      "zoom-in",
+      "zoom-out",
+      "touch-lock",
+      "viewer-title",
+      "compass",
+      "locate",
+      "map-rail",
+      "set-position",
+      "layer-position",
+      "device-orientation",
+      "add-checkpoint",
+      "layer-checkpoints",
+      "saved-checkpoints",
+      "open-more",
+      "sheet-more",
+      "sheet-add",
+      "fit",
+      "tool-center",
+      "placement-center",
+    ])
+      assert.equal(document.getElementById(gone), null);
+    assert.equal(el("rotation-lock").parentElement, dock, "Lock lives in the pill");
     assert.equal(toolBar.hidden, true);
     assert.equal(root.dataset.tool, "browse");
 
-    // Sheets open from the dock, toggle, and close with backdrop/Escape.
-    click("open-more");
+    // Panels open above the pill, which stays visible as tabs.
+    assert.deepEqual(
+      [...dock.querySelectorAll("button")].map((b) => b.id),
+      ["open-saved", "open-display", "open-add", "rotation-lock"],
+    );
+    click("open-saved");
     assert.equal(sheet.hidden, false);
-    assert.equal(el("sheet-more").hidden, false);
-    assert.equal(el("sheet-add").hidden, true);
-    assert.equal(el("sheet-title").textContent, "Settings");
-    assert.equal(el("open-more").getAttribute("aria-expanded"), "true");
-    assert.equal(dock.hidden, true);
-    // Fit lives here, not on the main controls.
-    click("fit");
-    assert.equal(fitted, 1);
+    assert.equal(el("sheet-saved").hidden, false);
+    assert.equal(el("sheet-display").hidden, true);
+    assert.equal(el("sheet-title").textContent, "Saved");
+    assert.equal(sheet.dataset.panel, "saved", "panel takes its button's color");
+    assert.equal(el("open-saved").getAttribute("aria-expanded"), "true");
+    assert.equal(dock.hidden, false);
+    // Add opens no panel: Place / Route rise above the pill, and Add's
+    // own button turns into × in the same spot to close them.
+    const addBar = el("add-bar");
+    assert.equal(addBar.hidden, true);
+    click("open-add");
     assert.equal(sheet.hidden, true);
+    assert.equal(el("open-saved").getAttribute("aria-expanded"), "false");
+    assert.equal(dock.hidden, false, "the pill never leaves");
+    assert.equal(addBar.hidden, false);
+    assert.equal(el("open-add").getAttribute("aria-expanded"), "true");
+    assert.equal(el("open-add").classList.contains("active"), true);
+    assert.equal(el("open-add-label").textContent, "Close");
+    assert.equal(document.getElementById("add-close"), null);
+    click("open-add");
+    assert.equal(addBar.hidden, true);
+    assert.equal(el("open-add-label").textContent, "Add");
+    click("open-add");
+    key(root, "Escape");
+    assert.equal(addBar.hidden, true, "Escape backs out of the choice");
+    click("open-add");
+    click("open-saved");
+    assert.equal(addBar.hidden, true, "a panel replaces the choice");
+    click("close-sheet");
     click("open-display");
     assert.equal(el("sheet-title").textContent, "View");
     click("open-display");
@@ -125,7 +167,7 @@ test("viewer controls: sheets, smart dark, layers, highlight, places, checkpoint
     key(root, "Escape");
     assert.equal(sheet.hidden, true);
     assert.equal(controls.escape(), false, "nothing left to back out of");
-    click("open-add");
+    click("open-display");
     click("sheet-dismiss");
     assert.equal(sheet.hidden, true);
 
@@ -144,49 +186,54 @@ test("viewer controls: sheets, smart dark, layers, highlight, places, checkpoint
     check("dark-map", true);
     assert.equal(state.inverted, true);
 
-    // The compass only appears once the map is rotated, and resets it.
-    assert.equal(el("compass").hidden, true);
-    state.view = { center: { x: 0, y: 0 }, scale: 1, rotation: Math.PI / 2 };
-    controls.options().onView();
-    assert.equal(el("compass").hidden, false);
-    rotation = 1;
-    click("compass");
-    assert.equal(rotation, 0);
-    state.view.rotation = 0;
-    controls.options().onView();
-    assert.equal(el("compass").hidden, true);
-
-    // Locate without a position starts setting one.
-    assert.equal(el("locate").getAttribute("aria-label"), "Set my position");
-    click("locate");
-    assert.equal(root.dataset.tool, "position");
-    key(root, "Escape");
-    assert.equal(root.dataset.tool, "browse");
-
-    // Fine rotation only appears (and works) once twisting is unlocked.
-    assert.equal((el("rotate-left") as HTMLButtonElement).disabled, true);
+    // Lock in the pill only stops rotation; fine rotation appears once off.
+    assert.equal(el("rotation-lock").getAttribute("aria-pressed"), "true");
     assert.equal(el("rotation-controls").hidden, true);
-    check("rotation-lock", false);
+    click("rotation-lock");
+    assert.equal(state.rotationLocked, false);
+    assert.equal(el("rotation-lock").getAttribute("aria-pressed"), "false");
+    assert.equal(el("rotation-lock").getAttribute("aria-label"), "Lock rotation");
+    assert.match(el("toast").textContent!, /Rotation unlocked/);
     assert.equal(el("rotation-controls").hidden, false);
     click("rotate-right");
     assert.ok(Math.abs(rotation - Math.PI / 12) < 1e-9);
+    click("rotation-lock");
+    assert.equal(state.rotationLocked, true);
+    assert.equal(el("rotation-controls").hidden, true);
 
     // Highlight with nothing saved explains instead of animating.
     click("spotlight");
     assert.equal(stage.classList.contains("spotlight"), false);
     assert.match(el("toast").textContent!, /Nothing saved/);
 
-    // Places: auto name follows kind until edited.
+    // Places: pick Place, tap the map, save the prefilled card.
     click("open-add");
     click("add-marker");
     assert.equal(sheet.hidden, true);
-    assert.equal(dock.hidden, true);
+    assert.equal(dock.hidden, false);
+    assert.equal(addBar.hidden, true, "the choice gives way to the hint");
     assert.equal(toolBar.hidden, false);
-    assert.equal(el("placement-center").hidden, false);
+    assert.equal(el("tool-message").textContent, "Tap the map where it goes");
+    assert.equal(el("tool-actions").hidden, true, "a place needs no buttons");
+    assert.equal(el("open-add-label").textContent, "Cancel");
+    assert.equal((el("open-saved") as HTMLButtonElement).disabled, true);
     assert.equal(root.dataset.tool, "marker");
-    click("tool-center");
+    tap(500, 600);
     assert.equal(el("marker-dialog").hasAttribute("open"), true);
     assert.equal((el("marker-label") as HTMLInputElement).value, "Landmark 1");
+    assert.notEqual(
+      document.activeElement,
+      el("marker-label"),
+      "no keyboard just to accept the prefilled name",
+    );
+    // Notes stay behind "Add note" until asked for.
+    assert.equal(el("marker-note-field").hidden, true);
+    assert.equal(el("marker-add-note").hidden, false);
+    assert.equal(
+      el("marker-dialog").querySelectorAll(".kind-pick svg circle").length,
+      5,
+      "kinds show the map's pins",
+    );
     const entrance = root.querySelector<HTMLInputElement>(
       'input[name="marker-kind"][value="entrance"]',
     )!;
@@ -198,15 +245,20 @@ test("viewer controls: sheets, smart dark, layers, highlight, places, checkpoint
     entrance.dispatchEvent(new window.Event("change"));
     assert.equal((el("marker-label") as HTMLInputElement).value, "Entrance 1");
     input("marker-label", "<Entrance>");
+    click("marker-add-note");
+    assert.equal(el("marker-note-field").hidden, false);
+    assert.equal(el("marker-add-note").hidden, true);
     input("marker-note", "Left opening");
     submit("marker-form");
     assert.equal(state.markers[0]?.label, "<Entrance>");
     assert.equal(state.markers[0]?.kind, "entrance");
     assert.deepEqual(state.markers[0]?.point, { x: 500, y: 600 });
     assert.equal(toolBar.hidden, true);
-    assert.equal(dock.hidden, false);
+    assert.equal(el("open-add-label").textContent, "Add");
+    assert.equal((el("open-saved") as HTMLButtonElement).disabled, false);
     controls.options().onMarker(state.markers[0]!);
     assert.equal(entrance.checked, true);
+    assert.equal(el("marker-note-field").hidden, false, "an existing note shows");
     assert.equal(el("marker-delete").hidden, false);
     input("marker-note", "Updated note");
     submit("marker-form");
@@ -215,58 +267,140 @@ test("viewer controls: sheets, smart dark, layers, highlight, places, checkpoint
     // Saved list renders names as text, never markup.
     assert.match(el("marker-list").textContent!, /<Entrance>/);
     assert.equal(el("saved-places-count").textContent, "1");
+    // Saved is one list: a Routes section then a Places section, no tabs.
+    assert.equal(document.querySelector("#sheet-saved [role=tab]"), null);
+    assert.equal(
+      el("marker-list").querySelector(".row-icon svg circle")?.getAttribute("fill"),
+      "#7dff8a",
+      "the row shows the entrance pin as drawn on the map",
+    );
+    // A row's actions stay tucked behind ⋯, in a small floating menu.
+    const popover = () => root.querySelector<HTMLElement>(".row-popover");
+    const placeMore = () =>
+      el("marker-list").querySelector<HTMLButtonElement>(".row-more")!;
+    click("open-saved");
+    assert.equal(popover(), null);
+    assert.match(placeMore().getAttribute("aria-label")!, /Actions for <Entrance>/);
+    placeMore().dispatchEvent(new window.Event("click"));
+    assert.equal(popover()?.getAttribute("role"), "menu");
+    assert.deepEqual(
+      [...popover()!.querySelectorAll("button")].map((b) => b.textContent),
+      ["Edit", "Move", "Delete"],
+    );
+    assert.equal(placeMore().getAttribute("aria-expanded"), "true");
+    // Tapping elsewhere closes it; so does Escape, before the panel.
+    document.body.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
+    assert.equal(popover(), null);
+    placeMore().dispatchEvent(new window.Event("click"));
+    key(root, "Escape");
+    assert.equal(popover(), null);
+    assert.equal(sheet.hidden, false);
+    placeMore().dispatchEvent(new window.Event("click"));
+    click("close-sheet");
+    click("open-saved");
+    assert.equal(popover(), null, "menus close with the panel");
 
-    // Position and checkpoints.
-    click("set-position");
-    tap(800, 900);
-    assert.deepEqual(state.position?.point, { x: 800, y: 900 });
-    click("add-checkpoint");
-    tap(900, 1000);
-    assert.equal((el("name-input") as HTMLInputElement).value, "Checkpoint 1");
-    input("name-input", "Recognized junction");
-    submit("name-form");
-    assert.equal(state.checkpoints.length, 1);
-    assert.ok(state.checkpoints[0]!.confirmed > 0);
-    assert.deepEqual(state.position?.point, { x: 900, y: 1000 });
+    // Move lifts the pin: tap (or drag) where it goes; × puts it back.
+    placeMore().dispatchEvent(new window.Event("click"));
+    popover()!.querySelectorAll("button")[1]!.dispatchEvent(new window.Event("click"));
+    assert.equal(root.dataset.tool, "move");
+    assert.equal(tools.at(-1), "move");
+    assert.equal(sheet.hidden, true);
+    assert.equal(el("tool-message").textContent, "Drag the pin, or tap where it goes");
+    assert.equal(el("route-undo").hidden, true);
+    assert.equal((el("tool-done") as HTMLButtonElement).disabled, false);
+    tap(700, 800);
+    assert.deepEqual(state.markers[0]?.point, { x: 700, y: 800 });
+    click("open-add");
+    assert.deepEqual(state.markers[0]?.point, { x: 500, y: 600 }, "× puts it back");
+    assert.equal(root.dataset.tool, "browse");
+    click("open-saved");
+    placeMore().dispatchEvent(new window.Event("click"));
+    popover()!.querySelectorAll("button")[1]!.dispatchEvent(new window.Event("click"));
+    tap(700, 800);
+    click("tool-done");
+    assert.deepEqual(state.markers[0]?.point, { x: 700, y: 800 });
+    assert.match(el("toast").textContent!, /<Entrance> moved/);
 
     // Routes start drawing immediately; Done needs two points.
     click("add-route");
     assert.equal(tools.at(-1), "route");
     assert.equal(state.routes.length, 1);
     assert.equal(state.routes[0]?.name, "Route 1");
-    assert.equal(el("tool-done").textContent, "Cancel");
+    const done = el("tool-done") as HTMLButtonElement;
+    assert.equal(el("tool-actions").hidden, false);
+    assert.equal(done.disabled, true);
     assert.equal((el("route-undo") as HTMLButtonElement).disabled, true);
     tap(900, 1000);
     tap(1500, 1700);
-    assert.equal(el("tool-done").classList.contains("ready"), true);
-    assert.equal(el("tool-done").textContent, "Done");
+    assert.equal(done.disabled, false);
     click("route-undo");
     assert.equal(state.routes[0]?.points.length, 1);
-    assert.equal(el("tool-done").textContent, "Cancel");
+    assert.equal(done.disabled, true);
     tap(1400, 1600);
     assert.match(el("tool-title").textContent!, /Route 1 · 2 points/);
+    // Dragging a point is one Undo step, like a tap.
+    const options = controls.options();
+    options.onDragStart?.();
+    state.routes[0]!.points[0]!.x = 950;
+    options.onDrop?.(true);
+    click("route-undo");
+    assert.equal(state.routes[0]?.points[0]?.x, 900);
+    assert.equal(state.routes[0]?.points.length, 2);
+    // An interrupted drag leaves no Undo step behind.
+    options.onDragStart?.();
+    options.onDrop?.(false);
+    click("route-undo");
+    assert.equal(state.routes[0]?.points.length, 1);
+    tap(1400, 1600);
     click("tool-done");
     assert.equal(state.routes[0]?.draft, false);
     assert.equal(toolBar.hidden, true);
     assert.equal(tools.at(-1), "browse");
 
     // Editing a finished route down to one point restores it.
-    const editButton = [...el("route-list").querySelectorAll("button")].find(
-      (b) => b.textContent === "Edit points",
-    )!;
-    editButton.dispatchEvent(new window.Event("click"));
+    const editPoints = () => {
+      click("open-saved");
+      el("route-list")
+        .querySelector(".row-more")!
+        .dispatchEvent(new window.Event("click"));
+      [...el("route-list").querySelectorAll("button")]
+        .find((b) => b.textContent === "Edit points")!
+        .dispatchEvent(new window.Event("click"));
+    };
+    editPoints();
     click("route-undo");
     assert.equal(state.routes[0]?.points.length, 1);
     key(root, "Escape");
     assert.equal(state.routes[0]?.points.length, 2);
     assert.equal(state.routes[0]?.draft, false);
 
-    // A new route with a single point is discarded.
+    // × cancels: a single point goes at once, real work asks twice.
+    click("open-add");
     click("add-route");
     tap(100, 100);
-    click("tool-done");
+    click("open-add");
     assert.equal(state.routes.length, 1);
     assert.match(el("toast").textContent!, /discarded/);
+    click("open-add");
+    click("add-route");
+    tap(100, 100);
+    tap(200, 200);
+    click("open-add");
+    assert.equal(state.routes.length, 2, "first × only asks");
+    assert.equal(el("open-add-label").textContent, "Discard?");
+    assert.match(el("toast").textContent!, /Tap × again to discard Route 2/);
+    click("open-add");
+    assert.equal(state.routes.length, 1);
+    assert.equal(tools.at(-1), "browse");
+    // Cancelling an edit restores the route as it was.
+    editPoints();
+    tap(300, 300);
+    click("open-add");
+    click("open-add");
+    assert.equal(state.routes[0]?.points.length, 2);
+    assert.equal(state.routes[0]?.draft, false);
+    assert.match(el("toast").textContent!, /unchanged/);
 
     // Saved route rows frame the route.
     el("route-list")
@@ -274,11 +408,21 @@ test("viewer controls: sheets, smart dark, layers, highlight, places, checkpoint
       .dispatchEvent(new window.Event("click"));
     assert.deepEqual(framed.at(-1), state.routes[0]!.points);
 
-    // Rename via the name dialog, delete needs two taps.
+    // Rename via the name dialog, delete needs two taps; all behind ⋯.
+    const openMenu = () => {
+      const more = el("route-list").querySelector<HTMLButtonElement>(".row-more")!;
+      if (more.getAttribute("aria-expanded") !== "true")
+        more.dispatchEvent(new window.Event("click"));
+    };
     const rowButton = (label: RegExp) =>
       [...el("route-list").querySelectorAll("button")].find((b) =>
         label.test(b.textContent!),
       )!;
+    openMenu();
+    assert.deepEqual(
+      [...popover()!.querySelectorAll("button")].map((b) => b.textContent),
+      ["Edit points", "Rename", "Delete"],
+    );
     rowButton(/Rename/).dispatchEvent(new window.Event("click"));
     input("name-input", "Exit plan");
     submit("name-form");
@@ -288,8 +432,11 @@ test("viewer controls: sheets, smart dark, layers, highlight, places, checkpoint
       (await loadNavigation("controls")).routes[0]?.name,
       "Exit plan",
     );
+    assert.equal(popover(), null, "the menu closes after an action");
+    openMenu();
     rowButton(/^Delete$/).dispatchEvent(new window.Event("click"));
     assert.equal(state.routes.length, 1);
+    assert.notEqual(popover(), null, "the menu stays open for the second delete tap");
     rowButton(/Tap again/).dispatchEvent(new window.Event("click"));
     assert.equal(state.routes.length, 0);
 
@@ -301,39 +448,13 @@ test("viewer controls: sheets, smart dark, layers, highlight, places, checkpoint
     assert.equal(stage.classList.contains("spotlight"), true);
     assert.equal(el("spotlight").classList.contains("active"), true);
 
-    // Locate jumps to the saved estimate; long-press drops a place.
-    assert.equal(el("locate").getAttribute("aria-label"), "Go to my position");
-    click("locate");
-    assert.deepEqual(jumps.at(-1), state.position!.point);
+    // Long-press drops a place.
     controls.options().onLongPress?.({ x: 2000, y: 2100 });
     assert.equal(el("marker-dialog").hasAttribute("open"), true);
     assert.equal((el("marker-label") as HTMLInputElement).value, "Landmark 2");
     submit("marker-form");
     assert.deepEqual(state.markers.at(-1)?.point, { x: 2000, y: 2100 });
 
-    // Touch lock hides everything except the hold-to-unlock bar.
-    click("touch-lock");
-    assert.equal(state.touchLocked, true);
-    assert.equal(dock.hidden, true);
-    assert.equal(el("zoom-rail").hidden, true);
-    assert.equal(el("touch-locked").hidden, false);
-    assert.equal((el("dark-map") as HTMLInputElement).disabled, true);
-    click("open-more");
-    assert.equal(sheet.hidden, true, "sheets stay closed while locked");
-    const unlock = el("unlock-view");
-    const press = () => {
-      const event = new window.Event("keydown", { cancelable: true });
-      Object.defineProperty(event, "key", { value: "Enter" });
-      unlock.dispatchEvent(event);
-    };
-    press();
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    unlock.dispatchEvent(new window.Event("keyup"));
-    assert.equal(state.touchLocked, true);
-    press();
-    await new Promise((resolve) => setTimeout(resolve, 1050));
-    assert.equal(state.touchLocked, false);
-    assert.equal(dock.hidden, false);
   } finally {
     controls.dispose();
     await controls.flush();

@@ -17,7 +17,7 @@ const node = <K extends keyof SVGElementTagNameMap>(
   return element;
 };
 // Small glyphs drawn inside 22px pins, in pin-local coordinates.
-const glyphs: Record<MapMarker["kind"], { d: string; fill?: boolean }> = {
+export const glyphs: Record<MapMarker["kind"], { d: string; fill?: boolean }> = {
   landmark: {
     d: "M0,-6.5L1.9,-2.1 6.5,-2.1 2.8,0.9 4,5.6 0,2.9 -4,5.6 -2.8,0.9 -6.5,-2.1 -1.9,-2.1Z",
     fill: true,
@@ -27,7 +27,7 @@ const glyphs: Record<MapMarker["kind"], { d: string; fill?: boolean }> = {
   bookmark: { d: "M-3,6V-6H5L3,-3L5,0H-3" },
   note: { d: "M-4,-3H4M-4,0H4M-4,3H1" },
 };
-const CASING = "#05070a";
+export const CASING = "#05070a";
 type Layer = keyof Layers;
 interface PathItem {
   element: SVGPathElement;
@@ -40,12 +40,14 @@ interface PathItem {
 export class NavigationOverlay {
   private points: { element: SVGGElement; point: Point }[] = [];
   private paths: PathItem[] = [];
-  private preview?: { element: SVGPathElement; from: Point };
   private editing?: string;
+  private moving?: string;
   private state?: NavigationState;
   constructor(private svg: SVGSVGElement) {}
-  setEditing(routeId?: string) {
+  /** Highlights the route being drawn (its points become handles) or the place being moved. */
+  setEditing(routeId?: string, markerId?: string) {
     this.editing = routeId;
+    this.moving = markerId;
     if (this.state) this.rebuild(this.state);
   }
   setLayers(layers: Layers) {
@@ -57,7 +59,6 @@ export class NavigationOverlay {
     this.svg.replaceChildren();
     this.points = [];
     this.paths = [];
-    this.preview = undefined;
     this.setLayers(state.layers);
     const group = (layer: Layer, className = "") => {
       const element = node("g", { "data-layer": layer, class: className });
@@ -112,21 +113,18 @@ export class NavigationOverlay {
         ...(route.draft && !active ? { "stroke-dasharray": "10 8" } : {}),
       });
       path(layer, route.points, { class: "route-flow" });
-      path(layer, route.points, { stroke: CASING, "stroke-width": "8" }, true);
-      path(layer, route.points, { stroke: color, "stroke-width": "4" }, true);
-      if (active) {
-        const from = route.points.at(-1);
-        if (from)
-          this.preview = {
-            from,
-            element: path(layer, [], {
-              stroke: color,
-              "stroke-width": "2.5",
-              "stroke-dasharray": "4 6",
-              class: "route-preview",
-            }),
-          };
-      }
+      path(
+        layer,
+        route.points,
+        { stroke: CASING, "stroke-width": "8", class: "route-dot-casing" },
+        true,
+      );
+      path(
+        layer,
+        route.points,
+        { stroke: color, "stroke-width": "4", class: "route-dot" },
+        true,
+      );
       const start = route.points[0];
       if (start) {
         const { element, body } = pin(layer, start);
@@ -153,32 +151,12 @@ export class NavigationOverlay {
         );
       }
     }
-    const checkpoints = group("checkpoints");
-    path(checkpoints, state.checkpoints.map((c) => c.point), {
-      stroke: "#ffb15c",
-      "stroke-width": "2.5",
-      "stroke-dasharray": "6 6",
-    });
-    for (const checkpoint of state.checkpoints) {
-      const { element, body } = pin(checkpoints, checkpoint.point);
-      body.append(
-        node("circle", { r: "8", fill: "#ffb15c", stroke: CASING, "stroke-width": "2.5" }),
-        node("path", {
-          d: "M-3.5,0.2L-1,2.7 3.8,-2.4",
-          fill: "none",
-          stroke: CASING,
-          "stroke-width": "2.2",
-          "stroke-linecap": "round",
-          "stroke-linejoin": "round",
-        }),
-      );
-      label(element, checkpoint.label, 13, -11);
-    }
     const places = group("places");
     for (const marker of state.markers) {
       const { color } = markerKinds[marker.kind] ?? markerKinds.bookmark;
       const glyph = glyphs[marker.kind] ?? glyphs.bookmark;
       const { element, body } = pin(places, marker.point);
+      if (marker.id === this.moving) element.classList.add("moving");
       body.append(
         node("circle", { r: "11", fill: color, stroke: CASING, "stroke-width": "2.5" }),
         node("path", {
@@ -191,14 +169,6 @@ export class NavigationOverlay {
         }),
       );
       label(element, marker.label);
-    }
-    if (state.position) {
-      const { element, body } = pin(group("position"), state.position.point);
-      body.append(
-        node("circle", { r: "20", class: "position-halo" }),
-        node("circle", { r: "8", fill: "#c18bff", stroke: "#fff", "stroke-width": "2.5" }),
-      );
-      label(element, "You (estimate)", 13, -12);
     }
   }
   draw(camera: Camera, viewport: Size) {
@@ -216,13 +186,6 @@ export class NavigationOverlay {
         d += path.dots ? `M${x},${y}h0` : `${i ? "L" : "M"}${x},${y}`;
       }
       path.element.setAttribute("d", d);
-    }
-    if (this.preview) {
-      const p = worldToScreen(camera, this.preview.from);
-      this.preview.element.setAttribute(
-        "d",
-        `M${p.x.toFixed(1)},${p.y.toFixed(1)}L${viewport.width / 2},${viewport.height / 2}`,
-      );
     }
     for (const pin of this.points) {
       const p = worldToScreen(camera, pin.point);

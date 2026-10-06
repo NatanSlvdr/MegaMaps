@@ -98,7 +98,6 @@ async function openMap(map: MapRecord) {
   home.hidden = true;
   viewerSection.hidden = false;
   document.body.classList.add("viewing");
-  element("viewer-title").textContent = map.name;
   element("viewer-error").hidden = true;
   try {
     // Reopening immediately must read the completed save, not the last throttle tick.
@@ -106,15 +105,11 @@ async function openMap(map: MapRecord) {
     if (version !== openVersion) return;
     const state = await loadNavigation(map.id);
     if (version !== openVersion) return;
-    controls = new ViewerControls(viewerSection, map, state, () => {
-      void checkOffline([map]);
-    });
+    controls = new ViewerControls(viewerSection, map, state);
     viewer = new Viewer(
       element<HTMLCanvasElement>("map-canvas"),
       map,
-      (percentage) => {
-        element("zoom").textContent = `${percentage}%`;
-      },
+      () => {}, // No zoom readout: the map is the only thing on screen.
       (message) => {
         element("viewer-error").textContent = message;
         element("viewer-error").hidden = false;

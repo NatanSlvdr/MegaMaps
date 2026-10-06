@@ -17,6 +17,7 @@ import { TileCache } from "./cache";
 import { attachInteractions } from "./interactions";
 import {
   defaultNavigation,
+  DEFAULT_DIMMING,
   captureView,
   restoreView,
   insideImage,
@@ -34,12 +35,19 @@ export interface ViewerOptions {
   onMarker(marker: MapMarker): void;
   /** Long press on the map while browsing, in image coordinates. */
   onLongPress?(point: Point): void;
+  /** A route point or the moving place was picked up (before it changes). */
+  onDragStart?(): void;
+  /** It was put down (moved) or put back (interrupted). */
+  onDrop?(moved: boolean): void;
   onAppearance?(mode: DarkMode): void;
 }
 export class Viewer {
   private navigation: NavigationState;
   private overlay?: NavigationOverlay;
   private tool: Tool = "browse";
+  /** The route being edited or the place being moved. */
+  private target?: string;
+  private dragging?: { point: Point; from: Point };
   private tone?: MapTone;
   private dark = darkMode(undefined);
   private camera: Camera = { x: 0, y: 0, scale: 1 };
@@ -86,6 +94,10 @@ export class Viewer {
       rotationLocked: () => this.navigation.rotationLocked,
       editing: () => this.tool !== "browse",
       tap: (point) => this.tap(point),
+      grab: (screen) => this.grab(screen),
+      drag: (screen) => this.dragTo(screen),
+      drop: (screen) => this.drop(screen),
+      cancelDrag: () => this.cancelDrag(),
       longPress: (screen) => {
         const point = screenToWorld(this.camera, screen);
         if (this.tool !== "browse" || !insideImage(point, this.map)) return false;
@@ -240,10 +252,15 @@ export class Viewer {
     if (animated) this.animate(camera);
     else this.setCamera(camera);
   }
-  setTool(tool: Tool, routeId?: string) {
+  setTool(tool: Tool, targetId?: string) {
     this.interactions.reset();
+    this.dragging = undefined;
     this.tool = tool;
-    this.overlay?.setEditing(tool === "route" ? routeId : undefined);
+    this.target = targetId;
+    this.overlay?.setEditing(
+      tool === "route" ? targetId : undefined,
+      tool === "move" ? targetId : undefined,
+    );
     this.invalidate();
   }
   updateNavigation(state: NavigationState) {
@@ -262,9 +279,11 @@ export class Viewer {
       .filter(Boolean)
       .join(" ");
     this.canvas.style.filter = filter;
+    // Annotations stay at full strength at the default dim and only fade
+    // (never below 60%) when the map is dimmed further.
     if (this.options)
       this.options.overlay.style.opacity = String(
-        Math.max(0.6, this.navigation.dimming),
+        Math.min(1, Math.max(0.6, this.navigation.dimming / DEFAULT_DIMMING)),
       );
     this.options?.onAppearance?.(this.dark);
   }
@@ -351,12 +370,6 @@ export class Viewer {
       ),
     );
   }
-  centerPoint() {
-    return screenToWorld(this.camera, {
-      x: this.width / 2,
-      y: this.height / 2,
-    });
-  }
   private tap(screen: Point) {
     const point = screenToWorld(this.camera, screen);
     if (!insideImage(point, this.map)) return this.tool !== "browse";
@@ -366,14 +379,11 @@ export class Viewer {
     };
     const markers = this.navigation.layers.places ? this.navigation.markers : [];
     if (this.tool === "route") {
-      // Snap route points onto saved places/checkpoints the user taps.
-      const snap = [
-        ...markers.map((m) => m.point),
-        ...(this.navigation.layers.checkpoints
-          ? this.navigation.checkpoints.map((c) => c.point)
-          : []),
-      ].find((target) => near(target, 24));
-      this.options?.onTap(snap ?? point);
+      // Snap route points onto saved places the user taps.
+      const snap = markers
+        .map((m) => m.point)
+        .find((target) => near(target, 24));
+      this.options?.onTap(snap ? { ...snap } : point);
       return true;
     }
     if (this.tool !== "browse") {
@@ -386,6 +396,69 @@ export class Viewer {
       return true;
     }
     return false;
+  }
+  private near(target: Point, screen: Point) {
+    const p = worldToScreen(this.camera, target);
+    return Math.hypot(p.x - screen.x, p.y - screen.y);
+  }
+  // Only while editing: the drawn route's points, or the place being moved.
+  private grab(screen: Point) {
+    const { routes, markers } = this.navigation;
+    let found: { point: Point; replace(point: Point): void } | undefined;
+    if (this.tool === "route") {
+      const route = routes.find((r) => r.id === this.target);
+      let best = 28;
+      // Later points win ties, so the end just drawn is the one picked up.
+      route?.points.forEach((point, index) => {
+        const d = this.near(point, screen);
+        if (d <= best) {
+          best = d;
+          found = { point, replace: (p) => (route.points[index] = p) };
+        }
+      });
+    }
+    if (this.tool === "move") {
+      const marker = markers.find((m) => m.id === this.target);
+      if (marker && this.near(marker.point, screen) < 36)
+        found = { point: marker.point, replace: (p) => (marker.point = p) };
+    }
+    if (!found) return false;
+    this.options?.onDragStart?.();
+    // Its own copy, so a route point snapped onto a place moves alone.
+    const point = { ...found.point };
+    found.replace(point);
+    this.dragging = { point, from: { ...point } };
+    this.overlay?.rebuild(this.navigation);
+    return true;
+  }
+  private dragTo(screen: Point) {
+    const dragging = this.dragging;
+    if (!dragging) return;
+    const p = screenToWorld(this.camera, screen);
+    dragging.point.x = Math.max(0, Math.min(this.map.width, p.x));
+    dragging.point.y = Math.max(0, Math.min(this.map.height, p.y));
+    this.invalidate();
+  }
+  private drop(screen: Point) {
+    this.dragTo(screen);
+    const dragging = this.dragging;
+    if (!dragging) return;
+    this.dragging = undefined;
+    if (this.tool === "route" && this.navigation.layers.places) {
+      const place = this.navigation.markers.find(
+        (m) => this.near(m.point, screen) < 24,
+      );
+      if (place) Object.assign(dragging.point, place.point);
+    }
+    this.options?.onDrop?.(true);
+  }
+  private cancelDrag() {
+    const dragging = this.dragging;
+    if (!dragging) return;
+    this.dragging = undefined;
+    Object.assign(dragging.point, dragging.from);
+    this.invalidate();
+    this.options?.onDrop?.(false);
   }
   private stopAnimation() {
     cancelAnimationFrame(this.animation);

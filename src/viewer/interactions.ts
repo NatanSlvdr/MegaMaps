@@ -4,6 +4,8 @@ interface Pointer extends Point {
   moved: boolean;
   /** A long press already handled this pointer. */
   held?: boolean;
+  /** Landed on an editable point; moving drags it instead of the map. */
+  grabbed?: boolean;
 }
 const LONG_PRESS_MS = 500;
 interface InteractionHost {
@@ -17,6 +19,12 @@ interface InteractionHost {
   editing?(): boolean;
   tap?(point: Point): boolean;
   longPress?(point: Point): boolean;
+  /** Whether an editable point is under this screen point (editing only). */
+  grab?(point: Point): boolean;
+  drag?(point: Point): void;
+  drop?(point: Point): void;
+  /** The drag was interrupted (second finger, cancel): put the point back. */
+  cancelDrag?(): void;
 }
 const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 const midpoint = (a: Point, b: Point) => ({
@@ -78,9 +86,17 @@ export function attachInteractions(
       stop();
       canvas.setPointerCapture(event.pointerId);
       const p = point(event);
-      points.set(event.pointerId, { ...p, start: p, moved: false });
+      // A second finger turns a drag back into a pinch.
+      for (const other of points.values())
+        if (other.grabbed) {
+          if (other.moved) host.cancelDrag?.();
+          other.grabbed = false;
+        }
+      const grabbed =
+        !points.size && !!host.editing?.() && !!host.grab?.(p);
+      points.set(event.pointerId, { ...p, start: p, moved: false, grabbed });
       quickZoom = undefined;
-      if (points.size === 1) {
+      if (points.size === 1 && !grabbed) {
         hadPinch = false;
         const id = event.pointerId;
         if (
@@ -128,6 +144,10 @@ export function attachInteractions(
       }
       if (old.held) return;
       points.set(event.pointerId, { ...old, ...p, moved });
+      if (old.grabbed) {
+        if (moved) host.drag?.(p);
+        return;
+      }
       const after = [...points.values()];
       const camera = host.getCamera();
       if (quickZoom && after.length === 1) {
@@ -191,11 +211,17 @@ export function attachInteractions(
     const zooming = quickZoom;
     if (!points.size) quickZoom = undefined;
     if (event.type === "pointercancel" || event.type === "lostpointercapture") {
+      if (pointer.grabbed && pointer.moved) host.cancelDrag?.();
       lastTap.time = 0;
       velocity = { x: 0, y: 0 };
       return;
     }
     if (host.locked?.()) return;
+    if (pointer.grabbed && pointer.moved) {
+      host.drop?.(point(event));
+      lastTap.time = 0;
+      return;
+    }
     if (pointer.held || (zooming && pointer.moved)) {
       lastTap.time = 0;
       return;

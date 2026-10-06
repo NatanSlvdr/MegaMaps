@@ -414,47 +414,11 @@ dialog textarea:focus {
 dialog textarea {
   resize: vertical;
 }
-.kind-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.chip input {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
-}
-.chip span {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 10px 14px;
-  border-radius: 99px;
-  background: var(--control);
-  border: 1.5px solid transparent;
-  font-size: 15px;
-  cursor: pointer;
-}
-.chip i {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-}
-.chip input:checked + span {
-  border-color: var(--accent);
-  background: #a6e38f1f;
-}
-.chip input:focus-visible + span {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
 
-/* ---------- Viewer: glass HUD ---------- */
-/* The map runs edge to edge. Controls float above it as small translucent
-   pills, grouped by intent: top = where am I (back, title, lock); right rail =
-   move around; dock = look (View, Highlight) · create (+) · yours (Saved,
-   Settings). */
+/* ---------- Viewer ---------- */
+/* Map first: only Back sits in the top-left corner, and one labeled pill at the
+   bottom opens the Saved / View panels, swaps to Place / Route for Add and
+   holds the rotation Lock. Fingers move the map; no zoom/pan buttons. */
 .viewing {
   overflow: hidden;
   overscroll-behavior: none;
@@ -473,11 +437,17 @@ dialog textarea {
   --hud-top: max(10px, calc(env(safe-area-inset-top) + 2px));
   /* Sits just above the home indicator instead of a full safe-area gap. */
   --hud-bottom: max(12px, calc(env(safe-area-inset-bottom) - 10px));
-  --dock-h: 64px;
-  --tool-h: 112px;
-  --glass: rgb(26 28 33 / 0.55);
-  --glass-strong: rgb(22 24 29 / 0.8);
-  --glass-line: rgb(255 255 255 / 0.13);
+  --dock-h: 54px;
+  /* Solid black controls: neon on pure black, like the dark map itself. */
+  --glass: #000;
+  --glass-strong: #000;
+  --glass-line: rgb(255 255 255 / 0.16);
+  /* One neon per function, matching the map's route/place colors. */
+  --neon-saved: #2ef2ff;
+  --neon-view: #ff4fd8;
+  --neon-add: #b6ff3b;
+  --neon-lock: #ff9a3c;
+  --c: var(--accent);
   --fill: rgb(255 255 255 / 0.07);
   --fill-strong: rgb(255 255 255 / 0.13);
 }
@@ -513,76 +483,45 @@ dialog textarea {
 }
 .glass {
   background: var(--glass);
-  -webkit-backdrop-filter: blur(20px) saturate(1.8);
-  backdrop-filter: blur(20px) saturate(1.8);
   border: 1px solid var(--glass-line);
-  box-shadow: 0 10px 30px rgb(0 0 0 / 0.35);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.3);
 }
-.viewer .glass button:active:not(:disabled),
+/* Neon icons glow in their function's color (--c). */
+.dock svg {
+  color: var(--c);
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--c) 65%, transparent));
+}
+.viewer .glass button:not(.tool-done, .add-choice):active:not(:disabled),
 button.glass:active:not(:disabled) {
   background-color: var(--fill-strong);
 }
 
-/* Top: back · title · lock */
-.hud-top {
+/* Top left: Back. */
+.corner-button {
   position: absolute;
   z-index: 2;
   top: var(--hud-top);
-  left: var(--edge-l);
-  right: var(--edge-r);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  pointer-events: none;
-}
-.hud-top > * {
-  pointer-events: auto;
-}
-.hud-round {
   display: grid;
   place-items: center;
-  width: 48px;
-  height: 48px;
+  width: 40px;
+  height: 40px;
   padding: 0;
-  flex-shrink: 0;
   border-radius: 50%;
 }
-.hud-round svg {
-  width: 22px;
-  height: 22px;
+.corner-button svg {
+  width: 20px;
+  height: 20px;
 }
-.hud-title {
-  min-width: 0;
-  max-width: 420px;
-  height: 48px;
-  margin: 0 auto;
-  padding: 0 18px;
-  border-radius: 24px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  line-height: 1.2;
-}
-#viewer-title {
-  max-width: 100%;
-  font-size: 15px;
-  font-weight: 600;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  overflow: hidden;
-}
-#zoom {
-  color: var(--muted);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
+.corner-left {
+  left: var(--edge-l);
 }
 .toast {
   position: absolute;
-  top: calc(var(--hud-top) + 58px);
+  top: calc(var(--hud-top) + 4px);
   left: 50%;
   transform: translateX(-50%);
-  max-width: calc(100% - 32px);
+  /* Clears the Back button on both sides so it stays centered. */
+  max-width: calc(100% - var(--edge-l) - var(--edge-r) - 124px);
   width: max-content;
   margin: 0;
   padding: 10px 18px;
@@ -601,110 +540,70 @@ button.glass:active:not(:disabled) {
   }
 }
 
-/* Right rail: compass (only when rotated) above position + zoom. */
-.map-rail {
-  position: absolute;
-  z-index: 2;
-  right: var(--edge-r);
-  bottom: calc(var(--hud-bottom) + var(--dock-h) + 14px);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  transition: bottom 0.2s ease;
-}
-.viewer[data-tool]:not([data-tool="browse"]) .map-rail {
-  bottom: calc(var(--hud-bottom) + var(--tool-h) + 14px);
-}
-#compass {
-  width: 52px;
-  height: 52px;
-}
-#compass svg {
-  width: 28px;
-  height: 28px;
-}
-.rail-group {
-  display: flex;
-  flex-direction: column;
-  border-radius: 26px;
-  overflow: hidden;
-}
-.rail-group button {
-  display: grid;
-  place-items: center;
-  width: 52px;
-  height: 52px;
-  background: none;
-}
-.rail-group button + button {
-  border-top: 1px solid var(--glass-line);
-}
-#locate {
-  color: #d2b3ff;
-}
-#locate.unset {
-  color: var(--muted);
-}
-
-/* Dock: [View · Highlight]  (+)  [Saved · Settings] */
+/* Bottom pill: three labeled tabs (the open one stays highlighted) and Lock. */
 .dock {
   position: absolute;
-  z-index: 2;
+  z-index: 5;
   left: var(--edge-l);
   right: var(--edge-r);
   bottom: var(--hud-bottom);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 12px;
-  pointer-events: none;
-}
-.dock > * {
-  pointer-events: auto;
-}
-.dock-group {
+  max-width: 340px;
+  margin: 0 auto;
   display: flex;
   gap: 2px;
-  padding: 4px;
-  border-radius: 32px;
+  padding: 3px;
+  border-radius: 27px;
 }
-.dock-group button {
-  display: grid;
-  place-items: center;
-  width: 58px;
-  height: 52px;
+.dock button {
+  flex: 1;
+  min-width: 0;
+  height: 46px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
   padding: 0;
-  border-radius: 26px;
+  border-radius: 23px;
   background: none;
+  color: #f2f4f6;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  transition:
+    background-color 0.15s,
+    box-shadow 0.15s;
 }
-.dock-group svg {
-  width: 25px;
-  height: 25px;
+.dock svg {
+  width: 21px;
+  height: 21px;
 }
-#spotlight svg {
-  color: #ffe27a;
+#open-saved,
+.sheet[data-panel="saved"] {
+  --c: var(--neon-saved);
 }
-#spotlight.active {
-  background: rgb(255 226 122 / 0.22);
+#open-display,
+.sheet[data-panel="display"] {
+  --c: var(--neon-view);
 }
-.dock-add {
-  display: grid;
-  place-items: center;
-  width: 64px;
-  height: 64px;
-  padding: 0;
-  border-radius: 50%;
-  background: var(--accent);
-  color: var(--accent-ink);
-  box-shadow:
-    inset 0 0 0 1px rgb(255 255 255 / 0.35),
-    0 10px 28px rgb(166 227 143 / 0.32);
+#open-add,
+.add-bar,
+.tool-bar,
+.place-card {
+  --c: var(--neon-add);
 }
-.dock-add svg {
-  width: 30px;
-  height: 30px;
-  stroke-width: 2.4;
+/* Lock toggles in place: orange while rotation is locked, muted when free. */
+#rotation-lock {
+  --c: var(--muted);
+}
+#rotation-lock[aria-pressed="true"] {
+  --c: var(--neon-lock);
+}
+.dock button[aria-expanded="true"],
+#rotation-lock[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--c) 22%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 60%, transparent);
+  color: var(--c);
 }
 .viewer-error {
   position: absolute;
@@ -724,209 +623,220 @@ button.glass:active:not(:disabled) {
   pointer-events: none;
 }
 
-/* ---------- Placement / route drawing ---------- */
+/* ---------- Add, placing and drawing ---------- */
+/* The pill stays put. Add's + turns into × (close / cancel) and whatever Add
+   needs floats just above the pill: first Place / Route, then the tap hint. */
+#open-add svg {
+  transition: transform 0.2s ease;
+}
+#open-add.active {
+  background: color-mix(in srgb, var(--c) 22%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 60%, transparent);
+  color: var(--c);
+}
+#open-add.active svg {
+  transform: rotate(45deg);
+}
+.dock button:disabled {
+  opacity: 0.35;
+}
+.add-bar,
 .tool-bar {
   position: absolute;
-  z-index: 2;
+  z-index: 5;
   left: var(--edge-l);
   right: var(--edge-r);
-  bottom: var(--hud-bottom);
-  max-width: 480px;
+  bottom: calc(var(--hud-bottom) + var(--dock-h) + 10px);
   margin: 0 auto;
+  animation: float-up 0.18s ease-out;
+}
+@keyframes float-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+.add-bar {
+  max-width: 340px;
   display: flex;
-  flex-direction: column;
+  gap: 10px;
+}
+.add-choice {
+  flex: 1;
+  min-width: 0;
+  height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border-radius: 27px;
+  border-color: color-mix(in srgb, var(--c) 35%, transparent);
+  font-size: 16px;
+  font-weight: 650;
+}
+.add-choice svg {
+  width: 22px;
+  height: 22px;
+  stroke-width: 2;
+}
+.add-choice.places svg {
+  color: #ff9a5c;
+}
+.add-choice.routes svg {
+  color: #38d6ff;
+}
+.add-choice:active {
+  background: color-mix(in srgb, var(--c) 22%, #000);
+}
+/* A slim line of instruction; routes add Undo and Done at its end. */
+.tool-bar {
+  width: fit-content;
+  max-width: min(400px, calc(100% - var(--edge-l) - var(--edge-r)));
+  min-height: 46px;
+  display: flex;
   align-items: center;
   gap: 10px;
-  pointer-events: none;
-}
-.tool-bar > * {
-  pointer-events: auto;
+  padding: 4px;
+  border-radius: 23px;
+  border-color: color-mix(in srgb, var(--c) 40%, transparent);
 }
 .tool-hint {
-  max-width: 100%;
+  min-width: 0;
   margin: 0;
-  padding: 9px 16px;
-  border-radius: 20px;
+  padding: 0 12px;
   font-size: 14px;
   line-height: 20px;
   color: #c9ced4;
-  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .tool-hint strong {
   color: var(--text);
   font-weight: 650;
   margin-right: 6px;
 }
-/* Cancel/Done stays left, away from the thumb's resting spot. */
 .tool-actions {
-  width: 100%;
+  flex-shrink: 0;
   display: flex;
-  align-items: center;
-  gap: 10px;
+  gap: 6px;
 }
 .tool-actions button {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  height: 60px;
-  border-radius: 30px;
-  font-size: 15px;
-  font-weight: 600;
-}
-.tool-actions svg {
-  width: 20px;
-  height: 20px;
-}
-.tool-done {
-  flex-shrink: 0;
-  padding: 0 18px 0 14px;
-}
-.tool-done span {
-  display: flex;
-}
-.tool-done .if-done,
-.tool-done.ready .if-cancel {
-  display: none;
-}
-.tool-done.ready .if-done {
-  display: flex;
-}
-.tool-done.ready {
-  background: #fff;
-  color: #000;
-}
-.tool-primary {
-  flex: 1;
-  min-width: 0;
-  background: var(--accent);
-  color: var(--accent-ink);
-  font-size: 16px;
-  box-shadow: 0 10px 28px rgb(166 227 143 / 0.28);
-}
-.tool-actions .tool-primary svg {
-  width: 22px;
-  height: 22px;
-  stroke-width: 2.4;
-}
-.tool-undo {
-  flex-shrink: 0;
-  width: 60px;
-  padding: 0;
-}
-.placement-center {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 26px;
-  height: 26px;
-  transform: translate(-50%, -50%);
-  border: 2px solid #fff;
-  border-radius: 50%;
-  box-shadow:
-    0 0 0 1.5px #000a,
-    inset 0 0 0 1.5px #000a;
-  pointer-events: none;
-  z-index: 1;
-}
-.placement-center:before,
-.placement-center:after {
-  content: "";
-  position: absolute;
-  background: #fff;
-  box-shadow: 0 0 0 1px #0008;
-}
-.placement-center:before {
-  width: 10px;
-  height: 2px;
-  left: -14px;
-  top: 10px;
-  box-shadow:
-    34px 0 0 #fff,
-    0 0 0 1px #0008;
-}
-.placement-center:after {
-  width: 2px;
-  height: 10px;
-  left: 10px;
-  top: -14px;
-  box-shadow:
-    0 34px 0 #fff,
-    0 0 0 1px #0008;
-}
-
-/* ---------- Touch lock ---------- */
-.touch-locked {
-  position: absolute;
-  z-index: 2;
-  left: var(--edge-l);
-  right: var(--edge-r);
-  bottom: var(--hud-bottom);
-  max-width: 420px;
-  margin: 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 6px 6px 6px 16px;
-  border-radius: 34px;
-}
-.locked-icon {
-  display: grid;
-  color: var(--accent);
-}
-.locked-icon svg {
-  width: 22px;
-  height: 22px;
-}
-.touch-locked > span {
-  flex: 1;
-  font-size: 15px;
-  font-weight: 600;
-}
-.touch-locked small {
-  display: block;
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--muted);
-}
-.touch-locked button {
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
-  flex-shrink: 0;
-  height: 54px;
-  padding: 0 20px;
-  border-radius: 27px;
+  height: 38px;
+  border-radius: 19px;
   background: var(--fill-strong);
   font-size: 15px;
-  font-weight: 600;
-  touch-action: none;
+  font-weight: 650;
 }
-.touch-locked button.holding:before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: #a6e38f66;
-  transform-origin: left;
-  animation: unlock-progress 1s linear forwards;
+.tool-actions svg {
+  width: 19px;
+  height: 19px;
 }
-@keyframes unlock-progress {
-  from {
-    transform: scaleX(0);
-  }
-  to {
-    transform: scaleX(1);
-  }
+.tool-undo {
+  width: 38px;
+  padding: 0;
+}
+.tool-done {
+  padding: 0 16px 0 12px;
+}
+.tool-done:not(:disabled) {
+  background: var(--c);
+  color: #0f1a00;
+  box-shadow: 0 0 18px color-mix(in srgb, var(--c) 40%, transparent);
+}
+.tool-actions button:disabled {
+  opacity: 0.4;
 }
 
-/* ---------- Floating glass sheet ---------- */
+/* New / edit place: a card at the bottom, within thumb reach. Kinds are the
+   map's own pins; the name is prefilled so Save works without typing. */
+.place-card {
+  margin: auto auto max(12px, env(safe-area-inset-bottom));
+  padding: 18px 16px 16px;
+  border-color: color-mix(in srgb, var(--c) 40%, transparent);
+  animation: card-up 0.2s ease-out;
+}
+@keyframes card-up {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+}
+.place-card h2 {
+  font-size: 18px;
+  margin-bottom: 14px;
+}
+.kind-picker {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+}
+.kind-pick {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 0 6px;
+  border-radius: 16px;
+  border: 1.5px solid transparent;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+.kind-pick input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.kind-pick svg {
+  width: 34px;
+  height: 34px;
+}
+.kind-pick:has(input:checked) {
+  border-color: var(--c);
+  background: color-mix(in srgb, var(--c) 12%, transparent);
+  color: var(--text);
+}
+.kind-pick:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+dialog form > label.place-name,
+dialog form > label.place-note {
+  margin: 14px 0 0;
+}
+.add-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  margin-top: 4px;
+  padding: 0 4px;
+  background: none;
+  color: var(--muted);
+  font-size: 14px;
+}
+.add-note svg {
+  width: 18px;
+  height: 18px;
+}
+.place-card .dialog-actions {
+  margin-top: 14px;
+}
+
+/* ---------- Panels (open above the bottom pill) ---------- */
 .sheet-dismiss {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  background: rgb(0 0 0 / 0.35);
+  background: rgb(0 0 0 / 0.25);
   z-index: 3;
 }
 .sheet-dismiss:active:not(:disabled) {
@@ -936,19 +846,22 @@ button.glass:active:not(:disabled) {
   position: absolute;
   left: var(--edge-l);
   right: var(--edge-r);
-  bottom: var(--hud-bottom);
+  bottom: calc(var(--hud-bottom) + var(--dock-h) + 8px);
   margin: 0 auto;
   max-width: 520px;
-  max-height: min(78svh, 680px);
+  max-height: min(
+    calc(100svh - var(--hud-top) - var(--hud-bottom) - var(--dock-h) - 16px),
+    640px
+  );
   display: flex;
   flex-direction: column;
   padding: 0 14px 14px;
   border-radius: 30px;
   background: var(--glass-strong);
-  -webkit-backdrop-filter: blur(30px) saturate(1.8);
-  backdrop-filter: blur(30px) saturate(1.8);
-  border: 1px solid var(--glass-line);
-  box-shadow: 0 20px 60px rgb(0 0 0 / 0.55);
+  border: 1px solid color-mix(in srgb, var(--c) 45%, transparent);
+  box-shadow:
+    0 20px 60px rgb(0 0 0 / 0.5),
+    0 0 28px color-mix(in srgb, var(--c) 22%, transparent);
   z-index: 4;
   animation: sheet-in 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
   transition: transform 0.2s ease;
@@ -958,7 +871,7 @@ button.glass:active:not(:disabled) {
 }
 @keyframes sheet-in {
   from {
-    transform: translateY(30%) scale(0.98);
+    transform: translateY(16px) scale(0.98);
     opacity: 0;
   }
 }
@@ -986,6 +899,7 @@ button.glass:active:not(:disabled) {
 }
 .sheet-header h2 {
   font-size: 20px;
+  color: var(--c);
   flex: 1;
   touch-action: none;
 }
@@ -1018,465 +932,347 @@ button.glass:active:not(:disabled) {
   letter-spacing: 0.07em;
   color: var(--muted);
 }
-.viewer .field-help,
-.viewer .save-status {
+.viewer .field-help {
   margin: 8px 4px;
   color: var(--muted);
   font-size: 13px;
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
-.viewer .save-status {
-  margin: 12px 0 0;
-  text-align: center;
-}
 
-/* Add: four big targets. */
-.add-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-.add-tile {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 3px;
-  min-height: 116px;
-  padding: 14px;
-  border-radius: 22px;
+/* View and Saved: stacked cards of rows (icon · label · control). */
+.panel-card {
+  border-radius: 20px;
   background: var(--fill);
-  text-align: left;
+  border: 1px solid var(--line);
+  overflow: hidden;
 }
-.add-tile strong {
-  font-size: 16px;
-  font-weight: 650;
-  margin-top: 8px;
-}
-.add-tile small {
-  font-size: 13px;
-  line-height: 1.35;
-  color: var(--muted);
-}
-.tile-icon {
-  display: grid;
-  place-items: center;
-  width: 42px;
-  height: 42px;
-  border-radius: 14px;
-  color: #000;
-}
-.tile-icon svg {
-  width: 24px;
-  height: 24px;
-  stroke-width: 2;
-}
-.tile-icon.places {
-  background: #ff9a5c;
-}
-.tile-icon.routes {
-  background: #38d6ff;
-}
-.tile-icon.checkpoints {
-  background: #ffb15c;
-}
-.tile-icon.position {
-  background: #c18bff;
-}
-.sheet-tip {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 8px;
-  margin: 12px 0 2px;
-  font-size: 13px;
-  color: var(--muted);
-}
-.sheet-tip svg {
-  width: 18px;
-  height: 18px;
-}
-
-/* View: quick toggles, sliders, layer chips. */
-.quick-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-.quick-tile {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 14px;
-  min-height: 92px;
-  padding: 14px;
-  border-radius: 22px;
-  background: var(--fill);
-  color: var(--text);
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1.2;
-  text-align: left;
-  cursor: pointer;
-  transition:
-    background-color 0.15s,
-    transform 0.08s;
-}
-.quick-tile:active {
-  transform: scale(0.97);
-}
-.quick-tile svg {
-  width: 26px;
-  height: 26px;
-}
-.quick-tile input,
-.layer-chip input {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
-}
-.quick-tile:has(input:checked) {
-  background: var(--accent);
-  color: var(--accent-ink);
-}
-.quick-tile:has(input:disabled),
-.layer-chip:has(input:disabled) {
-  opacity: 0.4;
-}
-.quick-tile:has(input:focus-visible),
-.layer-chip:has(input:focus-visible) {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-.slider-row {
+.panel-row,
+.row-main {
   display: flex;
   align-items: center;
   gap: 12px;
   min-height: 56px;
-  margin-top: 10px;
-  padding: 4px 14px;
-  border-radius: 22px;
-  background: var(--fill);
+  padding: 8px 14px;
 }
-.slider-row input {
-  flex: 1;
-  min-width: 0;
-}
-.slider-row > svg {
-  width: 20px;
-  height: 20px;
-  color: var(--muted);
-}
-.slider-row output {
-  min-width: 2.8em;
-  text-align: right;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-#rotation-controls {
-  padding-left: 6px;
-}
-.slider-step {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  flex-shrink: 0;
-  padding: 0;
-  border-radius: 50%;
-  background: var(--fill-strong);
-}
-.slider-step svg {
-  width: 20px;
-  height: 20px;
-}
-input[type="range"] {
-  accent-color: var(--accent);
-  min-height: 44px;
-}
-.layer-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.layer-chip {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 46px;
-  padding: 8px 15px 8px 12px;
-  border-radius: 23px;
-  background: var(--fill);
-  border: 1px solid transparent;
-  color: var(--muted);
-  font-size: 15px;
-  font-weight: 550;
-  cursor: pointer;
-  transition: background-color 0.15s;
-}
-.layer-chip svg {
-  width: 20px;
-  height: 20px;
-}
-.layer-chip small {
-  font-size: 13px;
-  opacity: 0.7;
-  font-variant-numeric: tabular-nums;
-}
-.layer-chip small:empty {
-  display: none;
-}
-.layer-chip:has(input:checked) {
-  background: var(--fill-strong);
-  border-color: rgb(255 255 255 / 0.14);
-  color: var(--text);
-}
-.layer-chip:not(:has(input:checked)) span {
-  text-decoration: line-through;
-  text-decoration-color: rgb(255 255 255 / 0.35);
-}
-.layer-chip.routes:has(input:checked) svg {
-  color: #38d6ff;
-}
-.layer-chip.places:has(input:checked) svg {
-  color: #ff9a5c;
-}
-.layer-chip.checkpoints:has(input:checked) svg {
-  color: #ffb15c;
-}
-.layer-chip.position:has(input:checked) svg {
-  color: #c18bff;
-}
-
-/* Saved */
-.segmented {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 4px;
-  padding: 4px;
-  margin-bottom: 6px;
-  background: rgb(0 0 0 / 0.35);
-  border-radius: 20px;
-}
-.segmented button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 44px;
-  padding: 0 4px;
-  border-radius: 16px;
-  font-size: 14px;
-  font-weight: 600;
-  background: none;
-  color: var(--muted);
-}
-.segmented svg {
-  width: 18px;
-  height: 18px;
-}
-.segmented small {
-  opacity: 0.7;
-  font-variant-numeric: tabular-nums;
-}
-.segmented button[aria-selected="true"] {
-  background: var(--fill-strong);
-  color: var(--text);
-}
-.navigation-row {
-  padding: 4px 4px 10px;
-  border-bottom: 1px solid var(--line);
-}
-.navigation-row:last-child {
-  border-bottom: 0;
-}
-.navigation-jump {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  background: none;
-  text-align: left;
-  padding: 8px 0;
-  min-height: 52px;
-}
-.navigation-jump:active:not(:disabled) {
-  transform: none;
-  opacity: 0.7;
-}
-.row-swatch {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  box-shadow: 0 0 0 3px #ffffff14;
-}
-.navigation-jump span {
-  min-width: 0;
-}
-.navigation-jump strong {
-  display: block;
-  font-size: 16px;
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-.navigation-jump small {
-  display: block;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.4;
-  max-height: 2.8em;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-  margin-top: 2px;
-}
-.row-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding-left: 26px;
-}
-.chip-button,
-.pill-button {
-  min-height: 40px;
-  padding: 8px 15px;
-  border-radius: 20px;
-  background: var(--fill-strong);
-  font-size: 14px;
-  font-weight: 600;
-}
-.pill-button {
-  flex-shrink: 0;
-}
-.chip-button.danger-text {
-  color: var(--danger);
-}
-.empty-list {
-  margin: 12px 0;
-  padding: 18px;
-  border-radius: 20px;
-  border: 1px dashed #ffffff22;
-  text-align: center;
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1.5;
-}
-
-/* Settings: grouped rows with tinted icons. */
-.setting-group {
-  margin-bottom: 12px;
-  padding: 0 14px;
-  border-radius: 22px;
-  background: var(--fill);
-}
-.setting-group > * + * {
+.panel-card > * + * {
   border-top: 1px solid var(--line);
 }
-.setting-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 64px;
-  padding: 10px 0;
+label.panel-row {
+  cursor: pointer;
 }
-.setting-icon {
+.panel-row.stacked {
+  flex-wrap: wrap;
+  row-gap: 2px;
+  padding-bottom: 4px;
+}
+.panel-row[hidden] {
+  display: none;
+}
+.row-icon {
   display: grid;
   place-items: center;
   width: 34px;
   height: 34px;
   flex-shrink: 0;
-  border-radius: 10px;
-  color: #fff;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--c) 16%, transparent);
+  color: var(--c);
 }
-.setting-icon svg {
+.row-icon svg {
   width: 20px;
   height: 20px;
 }
-.setting-icon.green {
-  background: #3f8c3b;
+.row-icon.routes {
+  --c: #38d6ff;
 }
-.setting-icon.blue {
-  background: #2f6fd6;
+.row-icon.places {
+  --c: #ff9a5c;
 }
-.setting-icon.gray {
-  background: #5a6068;
+.row-icon.labels {
+  --c: #e3e3e3;
 }
-.setting-text {
+.row-text {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
-.setting-text strong {
+.row-text strong {
   font-size: 16px;
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
-.setting-text small {
+.row-text small {
   color: var(--muted);
   font-size: 13px;
   line-height: 1.4;
+  max-height: 2.8em;
+  overflow: hidden;
   overflow-wrap: anywhere;
 }
-.setting-details summary {
-  list-style: none;
-  cursor: pointer;
-}
-.setting-details summary::-webkit-details-marker {
+.row-text small:empty {
   display: none;
 }
-.setting-details summary .setting-row:after {
+.panel-row output,
+.row-count {
+  color: var(--muted);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.panel-row output {
+  min-width: 2.8em;
+  text-align: right;
+}
+/* Sliders sit under their label, aligned with the text. */
+.row-slider {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 46px;
+}
+.row-slider input {
+  flex: 1;
+  min-width: 0;
+}
+.slider-step {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--fill-strong);
+}
+.slider-step svg {
+  width: 18px;
+  height: 18px;
+}
+input[type="range"] {
+  accent-color: var(--c, var(--accent));
+  min-height: 36px;
+}
+/* On/off switch in the panel's neon color. */
+.switch {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex-shrink: 0;
+  width: 46px;
+  height: 28px;
+  margin: 0;
+  border-radius: 14px;
+  background: var(--fill-strong);
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+.switch:before {
   content: "";
-  width: 8px;
-  height: 8px;
-  margin-right: 6px;
-  border-right: 2px solid var(--muted);
-  border-bottom: 2px solid var(--muted);
-  transform: rotate(45deg);
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
   transition: transform 0.15s;
 }
-.setting-details[open] summary .setting-row:after {
-  transform: rotate(-135deg);
+.switch:checked {
+  background: var(--c);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--c) 45%, transparent);
 }
-.pan-buttons {
-  display: flex;
-  gap: 8px;
-  margin: 0 0 14px;
+.switch:checked:before {
+  transform: translateX(18px);
+  background: #000;
 }
-.pan-buttons button {
+.switch:disabled {
+  opacity: 0.4;
+}
+.switch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.panel-action {
+  width: 100%;
+  margin-top: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex: 1;
-  min-height: 52px;
+  gap: 8px;
+  min-height: 50px;
   border-radius: 18px;
+  background: var(--fill);
+  border: 1px solid var(--line);
+  font-size: 15px;
+  font-weight: 600;
+}
+.panel-action svg {
+  width: 20px;
+  height: 20px;
+  color: var(--c);
+}
+.spotlight-action svg {
+  color: #ffe27a;
+}
+.panel-action.active {
+  border-color: color-mix(in srgb, var(--c) 60%, transparent);
+  background: color-mix(in srgb, var(--c) 18%, transparent);
+}
+
+/* Saved: a Routes section, then a Places section. */
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sheet h3.section-title:first-child {
+  margin-top: 4px;
+}
+.section-title svg {
+  width: 16px;
+  height: 16px;
+}
+.section-title.routes svg {
+  color: #38d6ff;
+}
+.section-title.places svg {
+  color: #ff9a5c;
+}
+.section-title small {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.row-main {
+  gap: 4px;
+  padding: 0 6px 0 0;
+}
+.navigation-jump {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 60px;
+  padding: 8px 0 8px 14px;
+  background: none;
+  text-align: left;
+}
+.navigation-jump:active:not(:disabled) {
+  transform: none;
+  opacity: 0.7;
+}
+.navigation-jump .row-icon {
   background: var(--fill-strong);
 }
-.pan-buttons span {
+.navigation-jump .row-icon svg {
+  width: 22px;
+  height: 22px;
+}
+.row-more {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  padding: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+}
+.row-more svg {
+  width: 20px;
+  height: 20px;
+}
+.row-more[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--c) 18%, transparent);
+  color: var(--c);
+}
+/* ⋯ opens a small menu floating beside it, over the rows below (or above,
+   near the bottom of the panel). */
+.navigation-list {
+  overflow: visible;
+}
+.navigation-row {
+  position: relative;
+}
+.navigation-row.open {
+  z-index: 2;
+}
+.row-popover {
+  position: absolute;
+  z-index: 3;
+  right: 8px;
+  top: calc(100% - 8px);
+  min-width: 196px;
+  padding: 6px;
+  border-radius: 18px;
+  background: #0d0e11;
+  border: 1px solid var(--glass-line);
+  box-shadow: 0 18px 44px rgb(0 0 0 / 0.65);
+  transform-origin: top right;
+  animation: pop-in 0.14s ease-out;
+}
+.row-popover.up {
+  top: auto;
+  bottom: calc(100% - 8px);
+  transform-origin: bottom right;
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+}
+.popover-item {
+  position: relative;
   display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 46px;
+  padding: 0 16px 0 12px;
+  border-radius: 12px;
+  background: none;
+  font-size: 15px;
+  font-weight: 600;
+  text-align: left;
 }
-.pan-up {
-  transform: rotate(90deg);
+.popover-item svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: var(--muted);
 }
-.pan-down {
-  transform: rotate(-90deg);
+.popover-item:active:not(:disabled),
+.popover-item:focus-visible {
+  background: var(--fill-strong);
+  outline: none;
 }
-.pan-right {
-  transform: rotate(180deg);
+.popover-item.danger {
+  margin-top: 7px;
+  color: var(--danger);
 }
-.gesture-list {
-  margin: 0 0 14px;
-  padding-left: 18px;
+.popover-item.danger svg {
+  color: currentColor;
+}
+.popover-item.danger:before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: -4px;
+  border-top: 1px solid var(--line);
+}
+.empty-list {
+  margin: 0;
+  padding: 18px;
+  text-align: center;
   color: var(--muted);
   font-size: 14px;
-  line-height: 1.6;
-}
-.gesture-list b {
-  color: var(--text);
-  font-weight: 600;
+  line-height: 1.5;
 }
 
 /* ---------- Overlay symbols ---------- */
@@ -1489,19 +1285,32 @@ input[type="range"] {
   font-size: 13px;
   font-weight: 650;
 }
-.position-halo {
-  fill: #c18bff26;
-  stroke: #c18bff;
-  stroke-width: 1.5;
-  stroke-dasharray: 3 3;
-}
 .route-flow {
   display: none;
 }
+/* Editing: the route's points grow into draggable handles; a place being
+   moved is lifted. */
+.route.editing .route-dot-casing {
+  stroke-width: 18px;
+}
+.route.editing .route-dot {
+  stroke-width: 12px;
+}
+.moving .pin-body {
+  filter: drop-shadow(0 0 8px rgb(255 255 255 / 0.7));
+  animation: lifted 1.2s ease-in-out infinite;
+}
+@keyframes lifted {
+  0%,
+  100% {
+    transform: scale(1.35);
+  }
+  50% {
+    transform: scale(1.55);
+  }
+}
 .map-overlay.hide-routes [data-layer="routes"],
 .map-overlay.hide-places [data-layer="places"],
-.map-overlay.hide-checkpoints [data-layer="checkpoints"],
-.map-overlay.hide-position [data-layer="position"],
 .map-overlay.hide-labels .overlay-label {
   display: none;
 }
@@ -1549,38 +1358,31 @@ input[type="range"] {
 
 @media (max-height: 520px) {
   .viewer {
-    --dock-h: 54px;
-    --tool-h: 52px;
+    --dock-h: 44px;
   }
-  .sheet {
-    max-height: calc(100svh - var(--hud-bottom) - 10px);
+  /* Landscape: icon beside label keeps the pill short. */
+  .dock button {
+    height: 36px;
+    flex-direction: row;
+    gap: 7px;
+    font-size: 13px;
   }
-  .dock-group button {
-    height: 44px;
+  .dock svg {
+    width: 20px;
+    height: 20px;
   }
-  .dock-add {
-    width: 54px;
-    height: 54px;
-  }
-  .tool-hint {
-    display: none;
+  .tool-bar {
+    min-height: 40px;
+    padding: 3px;
   }
   .tool-actions button {
-    height: 52px;
+    height: 34px;
   }
   .tool-undo {
-    width: 52px;
+    width: 34px;
   }
-  .map-rail {
-    flex-direction: row-reverse;
-    align-items: flex-end;
-  }
-  .add-tile,
-  .quick-tile {
-    min-height: 0;
-  }
-  .add-tile small {
-    display: none;
+  .add-choice {
+    height: 42px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

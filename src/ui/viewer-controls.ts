@@ -13,21 +13,11 @@ import {
   type MapMarker,
   type PlannedRoute,
 } from "../viewer/navigation";
-import {
-  lockDeviceOrientation,
-  unlockDeviceOrientation,
-} from "../viewer/orientation";
-const timestamp = (value: number) =>
-  new Date(value).toLocaleString([], {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-const sheets = ["add", "display", "saved", "more"] as const;
+import { icons } from "./icons";
+import { placeIcon } from "./place-icon";
+const sheets = ["display", "saved"] as const;
+const copyPoints = (points: Point[]) => points.map((point) => ({ ...point }));
 type Sheet = (typeof sheets)[number];
-const savedTabs = ["routes", "places", "checkpoints"] as const;
-type SavedTab = (typeof savedTabs)[number];
 const SPOTLIGHT_MS = 4500;
 const darkMessages: Record<DarkMode["kind"], string> = {
   inverted: "Light map: inverted, background pure black",
@@ -41,13 +31,9 @@ export class ViewerControls {
     Viewer,
     | "setTool"
     | "updateNavigation"
-    | "zoomBy"
-    | "panBy"
     | "rotateTo"
     | "jumpTo"
     | "fitPoints"
-    | "centerPoint"
-    | "fit"
   >;
   private controller = new AbortController();
   private persistence: NavigationPersistence;
@@ -55,36 +41,39 @@ export class ViewerControls {
   private activeRoute?: string;
   /** Points before editing began; undefined when the route is new. */
   private routeBefore?: Point[];
+  /** The route as it was when editing began, for × (cancel). */
+  private routeStart?: { points: Point[]; draft: boolean };
+  /** Undo steps for the route being drawn: its points before each tap or drag. */
+  private routeHistory: Point[][] = [];
+  private dragBefore?: Point[];
+  /** The place being moved, and where it was. */
+  private movingMarker?: string;
+  private moveFrom?: Point;
   private editingMarker?: string;
   private markerPoint?: Point;
   private autoMarkerName = "";
   private nameAction?: (name: string) => void;
-  private unlockTimer?: ReturnType<typeof setTimeout>;
   private toastTimer?: ReturnType<typeof setTimeout>;
   private spotlightTimer?: ReturnType<typeof setTimeout>;
   private confirmTimer?: ReturnType<typeof setTimeout>;
   private confirming?: string;
-  private deviceLocked = false;
-  private ownsFullscreen = false;
-  private disposed = false;
+  private rowMenu?: string;
+  /** Add was tapped: Place / Route float above the pill until one is picked. */
+  private choosing = false;
   private openSheet?: Sheet;
   private darkKind: DarkMode["kind"] = "inverted";
   constructor(
     private root: HTMLElement,
     private map: MapRecord,
     private state: NavigationState,
-    private verify: () => void,
   ) {
     this.persistence = new NavigationPersistence(
       () => this.state,
-      () => {
-        this.el("save-status").textContent =
-          "Could not save. Keep this map open and free device storage.";
-        this.toast("Could not save. Free some device storage.");
-      },
+      () => this.toast("Could not save. Free some device storage."),
     );
+    // Touch lock is no longer offered; never restore one from an older save.
+    this.state.touchLocked = false;
     this.bind();
-    this.selectSaved("routes");
     this.sheet(undefined);
     this.render();
   }
@@ -119,9 +108,19 @@ export class ViewerControls {
       onMarker: (marker) => this.editMarker(marker),
       // Long-press drops a place without going through Add.
       onLongPress: (point) => {
-        if (this.state.touchLocked || this.tool !== "browse") return;
+        if (this.tool !== "browse") return;
         navigator.vibrate?.(12);
+        if (this.choosing) this.choose(false);
         this.openMarker("New place", point);
+      },
+      onDragStart: () => {
+        const route = this.tool === "route" ? this.route() : undefined;
+        this.dragBefore = route && copyPoints(route.points);
+      },
+      onDrop: (moved) => {
+        if (moved && this.dragBefore) this.routeHistory.push(this.dragBefore);
+        this.dragBefore = undefined;
+        if (moved) this.changed();
       },
       onAppearance: (mode) => {
         this.darkKind = mode.kind;
@@ -146,10 +145,17 @@ export class ViewerControls {
     this.toastTimer = setTimeout(() => (toast.hidden = true), 2400);
   }
   private sheet(name: Sheet | undefined, returnFocus = false) {
-    if (name && this.state.touchLocked) return;
     const previous = this.openSheet;
+    this.choosing = false;
     this.openSheet = name;
+    // Row menus start closed each time a panel opens.
+    if (this.rowMenu && name !== previous) {
+      this.rowMenu = undefined;
+      this.render();
+    }
     this.el("sheet").hidden = !name;
+    // Tints the panel with its pill button's neon color.
+    this.el("sheet").dataset.panel = name ?? "";
     this.el("sheet").style.transform = "";
     this.el("sheet-dismiss").hidden = !name;
     for (const sheet of sheets) {
@@ -167,19 +173,18 @@ export class ViewerControls {
     if (name) this.el("close-sheet").focus();
     else if (returnFocus && previous) this.el(`open-${previous}`).focus();
   }
-  private selectSaved(tab: SavedTab) {
-    for (const name of savedTabs) {
-      const selected = name === tab;
-      const button = this.el(`saved-${name}`);
-      button.setAttribute("aria-selected", String(selected));
-      button.tabIndex = selected ? 0 : -1;
-      this.el(`saved-list-${name}`).hidden = !selected;
-    }
+  private choose(open: boolean) {
+    this.sheet(undefined);
+    this.choosing = open;
+    this.renderTool();
+    this.el(open ? "add-marker" : "open-add").focus();
   }
   private mode(tool: Tool) {
-    if (this.state.touchLocked) return;
     this.tool = tool;
-    this.viewer?.setTool(tool, this.activeRoute);
+    this.viewer?.setTool(
+      tool,
+      tool === "move" ? this.movingMarker : this.activeRoute,
+    );
     this.sheet(undefined);
     this.renderTool();
     this.el("map-canvas").focus();
@@ -221,41 +226,33 @@ export class ViewerControls {
     this.setMarkerKind(kind);
     this.el<HTMLTextAreaElement>("marker-note").value = marker?.note ?? "";
     this.el("marker-delete").hidden = !marker;
+    // Notes stay tucked away unless there already is one.
+    this.notes(!!marker?.note);
     this.dialog("marker-dialog").showModal();
-    if (!marker) {
-      this.input("marker-label").focus();
-      this.input("marker-label").select?.();
-    }
+    // The name is prefilled; don't pop the keyboard just to accept it.
+    this.el("marker-dialog").querySelector<HTMLInputElement>(
+      "input[name=marker-kind]:checked",
+    )?.focus();
+  }
+  private notes(open: boolean) {
+    this.el("marker-note-field").hidden = !open;
+    this.el("marker-add-note").hidden = open;
   }
   private onTap(point: Point) {
-    if (this.state.touchLocked || !insideImage(point, this.map)) return;
+    if (!insideImage(point, this.map)) return;
     if (this.tool === "marker") this.openMarker("New place", point);
-    if (this.tool === "position") {
-      this.state.position = { point, updated: Date.now() };
+    // Moving a place: a tap puts it there, as an alternative to dragging.
+    const moving = this.movingPlace();
+    if (moving) {
+      moving.point = point;
       this.changed();
-      this.mode("browse");
-      this.toast("Position estimate set");
     }
-    if (this.tool === "checkpoint")
-      this.name(
-        "Confirm checkpoint",
-        `Checkpoint ${this.state.checkpoints.length + 1}`,
-        (label) => {
-          this.state.checkpoints.push({
-            id: crypto.randomUUID(),
-            point,
-            label,
-            confirmed: Date.now(),
-          });
-          this.state.position = { point, updated: Date.now() };
-          this.changed();
-          this.mode("browse");
-          this.toast("Checkpoint confirmed · position updated");
-        },
-      );
     if (this.tool === "route") {
       const route = this.route();
       if (route) {
+        // A new point means the pending "Discard?" no longer applies.
+        if (this.confirming === "cancel-route") this.confirming = undefined;
+        this.routeHistory.push(copyPoints(route.points));
         route.points.push(point);
         this.changed();
       }
@@ -266,6 +263,8 @@ export class ViewerControls {
   }
   private editRoute(route: PlannedRoute) {
     this.routeBefore = route.draft ? undefined : [...route.points];
+    this.routeStart = { points: [...route.points], draft: route.draft };
+    this.routeHistory = [];
     route.draft = true;
     this.activeRoute = route.id;
     this.changed();
@@ -277,6 +276,8 @@ export class ViewerControls {
       before = this.routeBefore;
     this.activeRoute = undefined;
     this.routeBefore = undefined;
+    this.routeStart = undefined;
+    this.routeHistory = [];
     if (route) {
       if (route.points.length < 2 && before) {
         route.points = before;
@@ -294,17 +295,81 @@ export class ViewerControls {
     }
     this.mode("browse");
   }
+  // × while drawing: drop this session's points. A new route goes away;
+  // continued or edited ones return to how they were. Real work asks twice.
+  private cancelRoute() {
+    const route = this.route(),
+      start = this.routeStart;
+    if (!route || !start) return this.finishRoute();
+    const changed =
+      JSON.stringify(route.points) !== JSON.stringify(start.points);
+    if (changed && route.points.length >= 2 && this.confirming !== "cancel-route") {
+      this.confirming = "cancel-route";
+      clearTimeout(this.confirmTimer);
+      this.confirmTimer = setTimeout(() => {
+        this.confirming = undefined;
+        this.renderTool();
+      }, 3000);
+      this.renderTool();
+      this.toast(
+        start.points.length
+          ? `Tap × again to undo your changes to ${route.name}`
+          : `Tap × again to discard ${route.name}`,
+      );
+      return;
+    }
+    clearTimeout(this.confirmTimer);
+    this.confirming = undefined;
+    this.activeRoute = undefined;
+    this.routeBefore = undefined;
+    this.routeStart = undefined;
+    this.routeHistory = [];
+    if (!start.points.length)
+      this.state.routes = this.state.routes.filter((r) => r.id !== route.id);
+    else {
+      route.points = start.points;
+      route.draft = start.draft;
+    }
+    if (changed)
+      this.toast(
+        start.points.length ? `${route.name} unchanged` : "Route discarded",
+      );
+    this.changed();
+    this.mode("browse");
+  }
+  private movingPlace() {
+    return this.tool === "move"
+      ? this.state.markers.find((m) => m.id === this.movingMarker)
+      : undefined;
+  }
+  // Move: the pin lifts; drag it or tap where it goes, then Done (× puts it back).
+  private moveMarker(marker: MapMarker) {
+    this.movingMarker = marker.id;
+    this.moveFrom = { ...marker.point };
+    this.viewer?.jumpTo(marker.point);
+    this.mode("move");
+  }
+  private finishMove(keep: boolean) {
+    const marker = this.movingPlace(),
+      from = this.moveFrom;
+    this.movingMarker = undefined;
+    this.moveFrom = undefined;
+    if (marker && from) {
+      const moved = marker.point.x !== from.x || marker.point.y !== from.y;
+      if (!keep) marker.point = from;
+      if (moved) {
+        this.toast(keep ? `${marker.label} moved` : `${marker.label} not moved`);
+        this.changed();
+      }
+    }
+    this.mode("browse");
+  }
   private editMarker(marker: MapMarker) {
-    if (this.state.touchLocked) return;
     this.openMarker("Edit place", marker.point, marker);
   }
   private spotlight() {
     const stage = this.el("map-stage");
-    const count =
-      this.state.routes.length +
-      this.state.markers.length +
-      this.state.checkpoints.length +
-      (this.state.position ? 1 : 0);
+    const count = this.state.routes.length + this.state.markers.length;
     this.sheet(undefined);
     if (!count) {
       this.toast("Nothing saved yet. Use + to create routes and places.");
@@ -334,44 +399,24 @@ export class ViewerControls {
       event.preventDefault();
       event.stopPropagation();
     });
-    for (const tab of savedTabs) {
-      this.click(`saved-${tab}`, () => this.selectSaved(tab));
-      this.on(this.el(`saved-${tab}`), "keydown", (event) => {
-        const key = (event as KeyboardEvent).key;
-        if (!["ArrowLeft", "ArrowRight"].includes(key)) return;
-        event.preventDefault();
-        const index = savedTabs.indexOf(tab);
-        const next = savedTabs[(index + (key === "ArrowRight" ? 1 : 2)) % 3]!;
-        this.selectSaved(next);
-        this.el(`saved-${next}`).focus();
-      });
-    }
-    this.click("zoom-in", () => this.viewer?.zoomBy(1.6));
-    this.click("zoom-out", () => this.viewer?.zoomBy(1 / 1.6));
-    this.click("fit", () => {
-      this.viewer?.fit();
-      this.sheet(undefined);
-    });
     this.on(this.input("dark-map"), "change", () => {
-      if (this.state.touchLocked) return;
       this.state.inverted = this.input("dark-map").checked;
       this.changed();
     });
-    this.click("locate", () => {
-      if (this.state.position) this.viewer?.jumpTo(this.state.position.point);
-      else this.mode("position");
-    });
-    // Deliberate reset is allowed even while twisting is locked.
-    this.click("compass", () => this.viewer?.rotateTo(0, true));
     for (const layer of layerNames)
       this.on(this.input(`layer-${layer}`), "change", () => {
         this.state.layers[layer] = this.input(`layer-${layer}`).checked;
         this.changed();
       });
     this.click("spotlight", () => this.spotlight());
-    this.on(this.input("rotation-lock"), "change", () => {
-      this.state.rotationLocked = this.input("rotation-lock").checked;
+    this.click("rotation-lock", () => {
+      this.state.rotationLocked = !this.state.rotationLocked;
       this.changed();
+      this.toast(
+        this.state.rotationLocked
+          ? "Rotation locked"
+          : "Rotation unlocked · twist with two fingers",
+      );
     });
     this.on(this.input("rotation-angle"), "input", () =>
       this.viewer?.rotateTo(
@@ -388,48 +433,28 @@ export class ViewerControls {
       this.state.dimming = Number(this.input("map-dimming").value) / 100;
       this.changed();
     });
-    for (const button of this.root.querySelectorAll<HTMLButtonElement>(
-      "[data-pan]",
-    ))
-      this.on(button, "click", () => {
-        const directions: Record<string, [number, number]> = {
-          up: [0, 100],
-          down: [0, -100],
-          left: [100, 0],
-          right: [-100, 0],
-        };
-        const delta = directions[button.dataset.pan!];
-        if (delta) this.viewer?.panBy(...delta);
-      });
-    this.click("device-orientation", () => {
-      void this.deviceOrientation();
+    // Tapping anywhere outside an open row menu closes it.
+    this.on(document, "pointerdown", (event) => {
+      if (!this.rowMenu) return;
+      const target = event.target as Element | null;
+      if (target?.closest?.(".row-popover, .row-more")) return;
+      this.rowMenu = undefined;
+      this.render();
     });
-    this.on(document, "fullscreenchange", () => {
-      if (
-        !document.fullscreenElement &&
-        !window.matchMedia("(display-mode: standalone)").matches
-      ) {
-        this.deviceLocked = false;
-        this.el("device-orientation").textContent = "Lock";
-      }
-    });
-    this.click("touch-lock", () => {
-      if (this.tool === "route") this.finishRoute();
-      this.mode("browse");
-      this.state.touchLocked = true;
-      this.sheet(undefined);
-      this.changed();
-    });
-    this.bindUnlock();
     this.on(document, "visibilitychange", () => {
       if (document.hidden) void this.flush();
     });
     this.on(window, "pagehide", () => {
       void this.flush();
     });
+    // Add's button turns into × : it closes the choice or cancels the tool.
+    this.click("open-add", () => {
+      if (this.tool === "route") this.cancelRoute();
+      else if (this.tool === "move") this.finishMove(false);
+      else if (this.tool !== "browse") this.mode("browse");
+      else this.choose(!this.choosing);
+    });
     this.click("add-marker", () => this.mode("marker"));
-    this.click("set-position", () => this.mode("position"));
-    this.click("add-checkpoint", () => this.mode("checkpoint"));
     // Start drawing immediately; the default name can be changed from Saved.
     this.click("add-route", () => {
       const route: PlannedRoute = {
@@ -442,22 +467,24 @@ export class ViewerControls {
       this.state.routes.push(route);
       this.editRoute(route);
     });
-    this.click("tool-done", () => {
-      if (this.tool === "route") this.finishRoute();
-      else this.mode("browse");
-    });
-    this.click("tool-center", () => {
-      const point = this.viewer?.centerPoint();
-      if (point) this.onTap(point);
-    });
+    this.click("tool-done", () =>
+      this.tool === "move" ? this.finishMove(true) : this.finishRoute(),
+    );
     this.click("route-undo", () => {
+      // Steps back through this session's taps and drags; once those run
+      // out, it keeps removing the last point.
       const route = this.route();
-      if (route?.points.length) {
-        route.points.pop();
-        this.changed();
-      }
+      const previous = this.routeHistory.pop();
+      if (route && previous) route.points = previous;
+      else if (route?.points.length) route.points.pop();
+      else return;
+      this.changed();
     });
     this.click("marker-cancel", () => this.dialog("marker-dialog").close());
+    this.click("marker-add-note", () => {
+      this.notes(true);
+      this.el("marker-note").focus();
+    });
     this.click("marker-delete", () => {
       this.state.markers = this.state.markers.filter(
         (m) => m.id !== this.editingMarker,
@@ -510,7 +537,6 @@ export class ViewerControls {
       this.nameAction?.(name);
       this.nameAction = undefined;
     });
-    this.click("verify-current-map", () => this.verify());
   }
   // Swipe the sheet header down to dismiss it, like native bottom sheets.
   private bindSheetDrag() {
@@ -539,75 +565,6 @@ export class ViewerControls {
         });
     }
   }
-  private bindUnlock() {
-    const unlock = this.el<HTMLButtonElement>("unlock-view");
-    const cancelUnlock = () => {
-      clearTimeout(this.unlockTimer);
-      this.unlockTimer = undefined;
-      unlock.classList.remove("holding");
-    };
-    const startUnlock = () => {
-      if (this.unlockTimer) return;
-      unlock.classList.add("holding");
-      this.unlockTimer = setTimeout(() => {
-        cancelUnlock();
-        this.state.touchLocked = false;
-        this.changed();
-        this.toast("Touches unlocked");
-      }, 1000);
-    };
-    this.on(unlock, "pointerdown", (event) => {
-      const pointer = event as PointerEvent;
-      if (pointer.button !== 0) return;
-      unlock.setPointerCapture(pointer.pointerId);
-      startUnlock();
-    });
-    for (const type of ["pointerup", "pointercancel", "lostpointercapture"])
-      this.on(unlock, type, cancelUnlock);
-    this.on(unlock, "keydown", (event) => {
-      const key = (event as KeyboardEvent).key;
-      if (key === "Enter" || key === " ") {
-        event.preventDefault();
-        startUnlock();
-      }
-    });
-    this.on(unlock, "keyup", cancelUnlock);
-    this.on(unlock, "blur", cancelUnlock);
-    this.on(document, "visibilitychange", () => {
-      if (document.hidden) cancelUnlock();
-    });
-  }
-  private async deviceOrientation() {
-    if (this.deviceLocked) {
-      if (!unlockDeviceOrientation()) {
-        this.el("orientation-message").textContent =
-          "Screen orientation could not be unlocked. Use your phone’s rotation controls.";
-        return;
-      }
-      this.deviceLocked = false;
-      this.el("device-orientation").textContent = "Lock";
-      this.el("orientation-message").textContent =
-        "Screen orientation unlocked.";
-      return;
-    }
-    const button = this.el<HTMLButtonElement>("device-orientation");
-    button.disabled = true;
-    try {
-      const result = await lockDeviceOrientation(document.documentElement);
-      if (this.disposed) {
-        if (result.locked) unlockDeviceOrientation();
-        if (result.enteredFullscreen)
-          await document.exitFullscreen().catch(() => {});
-        return;
-      }
-      this.deviceLocked = result.locked;
-      this.ownsFullscreen ||= result.enteredFullscreen;
-      button.textContent = result.locked ? "Unlock" : "Lock";
-      this.el("orientation-message").textContent = result.message;
-    } finally {
-      button.disabled = false;
-    }
-  }
   private renderView() {
     const rotation =
       ((Math.round(((this.state.view?.rotation ?? 0) * 180) / Math.PI) % 360) +
@@ -615,12 +572,6 @@ export class ViewerControls {
       360;
     this.input("rotation-angle").value = String(rotation);
     this.el("rotation-value").textContent = `${rotation}°`;
-    const compass = this.el("compass");
-    compass.hidden = rotation === 0;
-    compass.querySelector("svg")?.setAttribute(
-      "style",
-      `transform: rotate(${rotation}deg)`,
-    );
   }
   private renderDark() {
     this.el("dark-status").textContent = this.state.inverted
@@ -630,8 +581,18 @@ export class ViewerControls {
   /** Backs out one level (sheet → tool → browse); false when already browsing. */
   escape() {
     if (this.root.querySelector("dialog[open]")) return false;
-    if (this.openSheet) this.sheet(undefined, true);
+    if (this.rowMenu) {
+      const key = this.rowMenu;
+      this.rowMenu = undefined;
+      this.render();
+      [...this.root.querySelectorAll<HTMLElement>(".navigation-row")]
+        .find((row) => row.dataset.row === key)
+        ?.querySelector<HTMLElement>(".row-more")
+        ?.focus();
+    } else if (this.openSheet) this.sheet(undefined, true);
+    else if (this.choosing) this.choose(false);
     else if (this.tool === "route") this.finishRoute();
+    else if (this.tool === "move") this.finishMove(true);
     else if (this.tool !== "browse") this.mode("browse");
     else return false;
     return true;
@@ -639,93 +600,127 @@ export class ViewerControls {
   private renderTool() {
     this.root.dataset.tool = this.tool;
     const editing = this.tool !== "browse",
-      locked = this.state.touchLocked,
       sheetOpen = !!this.openSheet;
-    this.el("dock").hidden = locked || editing || sheetOpen;
-    this.el("zoom-rail").hidden = locked || sheetOpen;
-    this.el("tool-bar").hidden = !editing || locked || sheetOpen;
-    this.el("placement-center").hidden = !editing || locked || sheetOpen;
-    this.el("touch-lock").hidden = locked;
+    // The pill never leaves: panels open above it, and so do the Place /
+    // Route choice and the tap hint. Add's + turns into × for both.
+    this.el("add-bar").hidden = !this.choosing;
+    const add = this.el("open-add");
+    add.setAttribute("aria-expanded", String(this.choosing));
+    add.classList.toggle("active", editing || this.choosing);
+    this.el("open-add-label").textContent = editing
+      ? this.confirming === "cancel-route"
+        ? "Discard?"
+        : "Cancel"
+      : this.choosing
+        ? "Close"
+        : "Add";
+    // One task at a time: the panels wait until placing is over.
+    for (const sheet of sheets)
+      this.el<HTMLButtonElement>(`open-${sheet}`).disabled = editing;
+    this.el("tool-bar").hidden = !editing || sheetOpen;
     const route = this.route();
     const count = route?.points.length ?? 0;
-    const texts: Record<Tool, [string, string, string]> = {
-      browse: ["", "", ""],
-      marker: ["New place", "Tap the map or aim the crosshair", "Place here"],
-      position: [
-        "Your position",
-        "Tap where you think you are",
-        "I’m here",
-      ],
-      checkpoint: [
-        "Checkpoint",
-        "Tap a spot you recognize now",
-        "Confirm here",
-      ],
+    const texts: Record<Tool, [string, string]> = {
+      browse: ["", ""],
+      move: [this.movingPlace()?.label ?? "Place", "Drag the pin, or tap where it goes"],
+      marker: ["New place", "Tap the map where it goes"],
       route: [
         `${route?.name ?? "Route"} · ${count} point${count === 1 ? "" : "s"}`,
-        count
-          ? "Tap along the passage"
-          : "Tap where the route starts",
-        "Add point",
+        count ? "Tap to add, drag points to adjust" : "Tap where the route starts",
       ],
     };
-    const [title, message, action] = texts[this.tool];
+    const [title, message] = texts[this.tool];
     this.el("tool-title").textContent = title;
     this.el("tool-message").textContent = message;
-    this.el("tool-center-label").textContent = action;
+    this.el("tool-actions").hidden = this.tool !== "route" && this.tool !== "move";
     this.el("route-undo").hidden = this.tool !== "route";
-    this.el<HTMLButtonElement>("route-undo").disabled = !count;
-    this.el("tool-done-label").textContent =
-      this.tool === "route" && count >= 2 ? "Done" : "Cancel";
-    this.el("tool-done").classList.toggle(
-      "ready",
-      this.tool === "route" && count >= 2,
-    );
+    this.el<HTMLButtonElement>("route-undo").disabled =
+      !count && !this.routeHistory.length;
+    this.el<HTMLButtonElement>("tool-done").disabled =
+      this.tool === "route" && count < 2;
   }
+  // Saved rows: tap to jump; the ⋯ button opens that row's actions underneath.
   private row(
     container: HTMLElement,
     options: {
+      key: string;
       label: string;
       detail: string;
-      color: string;
+      icon: string;
       jump: () => void;
-      actions?: { label: string; action: () => void; danger?: boolean }[];
+      actions: {
+        label: string;
+        icon: string;
+        action: () => void;
+        danger?: boolean;
+      }[];
     },
   ) {
     const row = document.createElement("div");
     row.className = "navigation-row";
+    row.dataset.row = options.key;
+    const main = document.createElement("div");
+    main.className = "row-main";
     const button = document.createElement("button");
     button.className = "navigation-jump";
-    const swatch = document.createElement("i"),
+    const icon = document.createElement("i"),
       text = document.createElement("span"),
       title = document.createElement("strong"),
       description = document.createElement("small");
-    swatch.className = "row-swatch";
-    swatch.style.background = options.color;
+    icon.className = "row-icon";
+    icon.innerHTML = options.icon;
+    text.className = "row-text";
     title.textContent = options.label;
     description.textContent = options.detail;
     text.append(title, description);
-    button.append(swatch, text);
-    button.disabled = this.state.touchLocked;
+    button.append(icon, text);
     button.addEventListener("click", () => {
       options.jump();
       this.sheet(undefined);
     });
-    row.append(button);
-    if (options.actions?.length) {
-      const actions = document.createElement("div");
-      actions.className = "row-actions";
-      for (const extra of options.actions) {
-        const action = document.createElement("button");
-        action.className = extra.danger ? "chip-button danger-text" : "chip-button";
-        action.textContent = extra.label;
-        action.disabled = this.state.touchLocked;
-        action.addEventListener("click", extra.action);
-        actions.append(action);
-      }
-      row.append(actions);
-    }
+    const open = this.rowMenu === options.key;
+    const toggle = document.createElement("button");
+    toggle.className = "row-more";
+    toggle.innerHTML = icons.more;
+    toggle.setAttribute("aria-label", `Actions for ${options.label}`);
+    toggle.setAttribute("aria-haspopup", "menu");
+    toggle.setAttribute("aria-expanded", String(open));
+    toggle.addEventListener("click", () => {
+      this.rowMenu = open ? undefined : options.key;
+      this.render();
+      if (!open)
+        this.root.querySelector<HTMLElement>(".row-popover button")?.focus();
+    });
+    main.append(button, toggle);
+    row.append(main);
     container.append(row);
+    if (!open) return;
+    // A small menu floating beside ⋯; Delete sits last, set apart in red.
+    const menu = document.createElement("div");
+    menu.className = "row-popover";
+    menu.setAttribute("role", "menu");
+    menu.setAttribute("aria-label", options.label);
+    for (const extra of options.actions) {
+      const action = document.createElement("button");
+      action.className = extra.danger ? "popover-item danger" : "popover-item";
+      action.setAttribute("role", "menuitem");
+      const label = document.createElement("span");
+      label.textContent = extra.label;
+      action.innerHTML = extra.icon;
+      action.append(label);
+      action.addEventListener("click", () => {
+        if (!extra.danger) this.rowMenu = undefined;
+        extra.action();
+      });
+      menu.append(action);
+    }
+    row.classList.add("open");
+    row.append(menu);
+    // Opens upward when there's no room below in the panel.
+    const list = this.root.querySelector(".sheet-content")?.getBoundingClientRect?.();
+    const box = menu.getBoundingClientRect?.();
+    if (list && box && box.bottom > list.bottom - 8 && box.height)
+      menu.classList.add("up");
   }
   // Two taps to delete: the first arms the button for a few seconds.
   private confirmDelete(key: string, action: () => void) {
@@ -749,128 +744,88 @@ export class ViewerControls {
     return this.confirming === key ? "Tap again to delete" : "Delete";
   }
   private render() {
-    const locked = this.state.touchLocked;
-    this.input("rotation-lock").checked = this.state.rotationLocked;
+    const rotationLock = this.el("rotation-lock");
+    rotationLock.setAttribute("aria-pressed", String(this.state.rotationLocked));
+    rotationLock.setAttribute(
+      "aria-label",
+      this.state.rotationLocked ? "Unlock rotation" : "Lock rotation",
+    );
     this.input("dark-map").checked = this.state.inverted;
     this.input("map-dimming").value = String(this.state.dimming * 100);
     this.el("dimming-value").textContent =
       `${Math.round(this.state.dimming * 100)}%`;
-    this.el("touch-lock").setAttribute("aria-pressed", String(locked));
-    this.el("locate").setAttribute(
-      "aria-label",
-      this.state.position ? "Go to my position" : "Set my position",
-    );
-    this.el("locate").classList.toggle("unset", !this.state.position);
-    this.el("touch-locked").hidden = !locked;
     this.renderDark();
     const counts = {
       routes: this.state.routes.length,
       places: this.state.markers.length,
-      checkpoints: this.state.checkpoints.length,
-      position: this.state.position ? 1 : 0,
     };
     for (const layer of layerNames) {
       this.input(`layer-${layer}`).checked = this.state.layers[layer];
       if (layer !== "labels")
         this.el(`layer-${layer}-count`).textContent = String(counts[layer]);
     }
-    for (const tab of savedTabs)
-      this.el(`saved-${tab}-count`).textContent = String(counts[tab]);
-    for (const id of [
-      "dark-map",
-      "locate",
-      "compass",
-      "rotation-lock",
-      "map-dimming",
-      "add-marker",
-      "set-position",
-      "add-checkpoint",
-      "add-route",
-      "zoom-in",
-      "zoom-out",
-      "fit",
-      "spotlight",
-      "device-orientation",
-      ...sheets.map((sheet) => `open-${sheet}`),
-    ])
-      this.el<HTMLButtonElement | HTMLInputElement>(id).disabled = locked;
+    this.el("saved-routes-count").textContent = String(counts.routes);
+    this.el("saved-places-count").textContent = String(counts.places);
     // Fine rotation only appears once twisting is unlocked.
     this.el("rotation-controls").hidden = this.state.rotationLocked;
-    for (const id of ["rotation-angle", "rotate-left", "rotate-right"])
-      this.el<HTMLInputElement | HTMLButtonElement>(id).disabled =
-        this.state.rotationLocked || locked;
-    this.el("map-offline-status").textContent = this.map.offlineVerifiedAt
-      ? `Last checked ${timestamp(this.map.offlineVerifiedAt)}. Recheck before a trip.`
-      : "Not checked yet. Check before going underground.";
     const markers = this.el("marker-list"),
-      checkpoints = this.el("checkpoint-list"),
-      routes = this.el("route-list"),
-      position = this.el("position-row");
+      routes = this.el("route-list");
     markers.replaceChildren();
-    checkpoints.replaceChildren();
     routes.replaceChildren();
-    position.replaceChildren();
-    if (this.state.position) {
-      const estimate = this.state.position;
-      this.row(position, {
-        label: "My position (estimate)",
-        detail: `Set ${timestamp(estimate.updated)}`,
-        color: "#c18bff",
-        jump: () => this.viewer?.jumpTo(estimate.point),
-        actions: [
-          { label: "Move", action: () => this.mode("position") },
-          {
-            label: "Clear",
-            action: () => {
-              delete this.state.position;
-              this.changed();
-            },
-          },
-        ],
-      });
-    }
     for (const marker of this.state.markers) {
       const kind = markerKinds[marker.kind] ?? markerKinds.bookmark;
       this.row(markers, {
+        key: marker.id,
         label: marker.label,
         detail: `${kind.label}${marker.note ? " · " + marker.note : ""}`,
-        color: kind.color,
+        icon: placeIcon(marker.kind),
         jump: () => this.viewer?.jumpTo(marker.point),
-        actions: [{ label: "Edit", action: () => this.editMarker(marker) }],
-      });
-    }
-    for (const checkpoint of this.state.checkpoints)
-      this.row(checkpoints, {
-        label: checkpoint.label,
-        detail: `Confirmed ${timestamp(checkpoint.confirmed)}`,
-        color: "#ffb15c",
-        jump: () => this.viewer?.jumpTo(checkpoint.point),
         actions: [
           {
-            label: this.deleteLabel(checkpoint.id),
+            label: "Edit",
+            icon: icons.edit,
+            action: () => this.editMarker(marker),
+          },
+          {
+            label: "Move",
+            icon: icons.move,
+            action: () => this.moveMarker(marker),
+          },
+          {
+            label: this.deleteLabel(marker.id),
+            icon: icons.trash,
             danger: true,
-            action: this.confirmDelete(checkpoint.id, () => {
-              this.state.checkpoints = this.state.checkpoints.filter(
-                (c) => c.id !== checkpoint.id,
+            action: this.confirmDelete(marker.id, () => {
+              this.rowMenu = undefined;
+              this.state.markers = this.state.markers.filter(
+                (m) => m.id !== marker.id,
               );
               this.changed();
+              this.toast("Place deleted");
             }),
           },
         ],
       });
+    }
     for (const route of this.state.routes)
       this.row(routes, {
+        key: route.id,
         label: route.name,
         detail: `${route.points.length} points${route.draft ? " · unfinished" : ""}`,
-        color: routeColor(this.state, route.id),
+        icon: icons.route.replace(
+          "<svg ",
+          `<svg style="color:${routeColor(this.state, route.id)}" `,
+        ),
         jump: () => this.viewer?.fitPoints(route.points),
         actions: [
           {
             label: route.draft ? "Continue" : "Edit points",
+            icon: icons.edit,
             action: () => this.editRoute(route),
           },
           {
             label: "Rename",
+            icon: icons.text,
             action: () =>
               this.name("Rename route", route.name, (name) => {
                 route.name = name;
@@ -879,8 +834,10 @@ export class ViewerControls {
           },
           {
             label: this.deleteLabel(route.id),
+            icon: icons.trash,
             danger: true,
             action: this.confirmDelete(route.id, () => {
+              this.rowMenu = undefined;
               this.state.routes = this.state.routes.filter(
                 (r) => r.id !== route.id,
               );
@@ -894,8 +851,7 @@ export class ViewerControls {
         ],
       });
     for (const [container, empty] of [
-      [markers, this.state.position ? "" : "No places yet. Use Add › Place."],
-      [checkpoints, "No checkpoints yet."],
+      [markers, "No places yet. Use Add › Place."],
       [routes, "No routes yet. Use Add › Route, then tap along passages."],
     ] as const)
       if (!container.childElementCount && empty) {
@@ -914,11 +870,9 @@ export class ViewerControls {
     await this.persistence.flush();
   }
   dispose() {
-    this.disposed = true;
     // Leaving mid-route keeps a usable route rather than an orphan draft.
     if (this.tool === "route") this.finishRoute();
     this.sheet(undefined);
-    clearTimeout(this.unlockTimer);
     clearTimeout(this.toastTimer);
     clearTimeout(this.spotlightTimer);
     clearTimeout(this.confirmTimer);
@@ -928,12 +882,6 @@ export class ViewerControls {
     this.controller.abort();
     this.dialog("marker-dialog").close();
     this.dialog("name-dialog").close();
-    if (this.deviceLocked) unlockDeviceOrientation();
-    if (
-      this.ownsFullscreen &&
-      document.fullscreenElement === document.documentElement
-    )
-      void document.exitFullscreen().catch(() => {});
     return saved;
   }
 }

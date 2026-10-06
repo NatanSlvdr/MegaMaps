@@ -104,7 +104,7 @@ test("saved center/zoom/rotation survive a changed device viewport", () => {
   near(restored.scale, 0.8);
   near(restored.rotation!, 1.3);
 });
-test("notes, routes, manual estimates/checkpoints and settings persist; deletion blocks late writes", async () => {
+test("notes, routes and settings persist; deletion blocks late writes", async () => {
   const record = map("nav");
   await saveMap(record);
   const state = defaultNavigation("nav");
@@ -130,13 +130,6 @@ test("notes, routes, manual estimates/checkpoints and settings persist; deletion
     ],
     created: 1,
     draft: false,
-  });
-  state.position = { point: { x: 900, y: 800 }, updated: 2 };
-  state.checkpoints.push({
-    id: "check",
-    point: { x: 900, y: 800 },
-    label: "Junction",
-    confirmed: 2,
   });
   await saveNavigation(state);
   await setLastMap("nav");

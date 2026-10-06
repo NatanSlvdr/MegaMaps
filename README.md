@@ -69,7 +69,6 @@ src/
     viewer.ts               Viewport canvas, level selection, diagnostics
     navigation.ts           Map tools data in original-image coordinates
     overlays.ts             SVG markers/routes, independent of color inversion
-    orientation.ts          Best-effort device orientation lock + honest fallback
   ui/
     viewer-markup.ts         Touch controls, tools panel, local note forms
     viewer-controls.ts       Navigation commands, dialogs and persistence
@@ -100,30 +99,27 @@ The original remains locally stored. Metadata is committed as ready **only after
 
 Drag to pan; pinch to zoom. **Double-tap and drag** down/up zooms with one thumb; a plain double tap zooms in (at deep zoom it returns to fit). **Long-press** the map to drop a place. Wheel/trackpad zoom is centered on the cursor.
 
-The map runs edge to edge under small translucent ("glass") pills, grouped by what you want to do:
+The map fills the screen. Fingers move it, so there are no zoom or pan buttons; only a few controls float over it:
 
-- **Top:** back to the library · map name and zoom · touch lock.
-- **Right rail (move around):** the **compass** (only shown when the map is rotated; tap for north up), **my position** (jumps to your estimate, or lets you set one) and **zoom**.
-- **Bottom dock:** a *look* pill with **View** (dark map, brightness, whole map, rotation, layers) and **Highlight**; the big **+** to create; a *yours* pill with **Saved** and **Settings** (offline check, screen orientation, pan buttons, gestures).
+- **Top left:** **Back** to the library.
+- **Bottom pill:** **Saved** (routes, places) · **View** (dark map, brightness, rotation, layers, highlight) · **Add** (place, route) · **Lock** (map rotation lock; orange while locked).
 
-Each dock button opens one floating sheet (swipe its header down, tap outside, Close or Escape to dismiss). **Whole map** (fit) is a tile in View, since you usually zoom where you already are. Keyboard: arrows pan, `+`/`−` zoom, `0` or `F` fits; Escape closes the sheet, then finishes the current tool, then returns home. The viewer supports native resolution and up to 400% CSS zoom; native-level pixels are not interpolated when enlarged.
+**Saved** and **View** open a panel just above the pill, and their button stays highlighted while it is open: tap another button to switch, or the same button, the map, Close or Escape to dismiss (you can also swipe the panel header down). Keyboard: arrows pan, `+`/`−` zoom, `0` or `F` fits; Escape closes the panel or the Add choice, then finishes the current tool, then returns home. The viewer supports native resolution and up to 400% CSS zoom; native-level pixels are not interpolated when enlarged.
 
 ### Cave and quarry tools
 
-- **Dark map (on by default):** the overview tile is analysed once. Light maps are inverted with hue preserved and contrast stretched so the paper becomes **pure black** (OLED pixels off, which saves battery) and the ink stays bright but not glaring. Dark-gray maps have their background deepened to black without inverting. Maps that are already black are left untouched. The margin around the map is also pure black. **View › brightness** dims the map further (20–100%); the Dark map tile is in View too. Only the canvas is filtered; the original files and tiles are untouched. This is a software display adjustment, not hardware brightness control.
-- **Add (+):** Place, Route, Checkpoint or My position. A crosshair and an action row (Cancel/Done · big action · Undo) replace the dock: tap the map, or aim the crosshair and press the big button. New places get a default name such as "Landmark 3", which follows the kind you pick until you type your own.
-- **Planned routes:** Add › Route starts drawing right away. Tap along passages; a dashed preview runs from the last point to the crosshair. Points snap to nearby places and checkpoints, and Undo removes the last one. **Done** saves the route once it has 2 or more points; with fewer, the button reads Cancel and discards the new route (an edited route is restored). Routes get distinct colors with start and end markers. From **Saved › Routes** you can frame a route, continue it, edit its points, rename it or delete it (tap Delete twice).
-- **Layers (View › Show on map):** toggle routes, places, checkpoints, your position and names. **Highlight** (sparkle in the dock) darkens the map for a few seconds while every saved item glows and pulses, including hidden layers.
-- **Saved:** lists of routes, places (with your position) and checkpoints. Tap a row to jump to it.
-- **Manual estimated position:** place or update an explicitly labelled estimate; move or clear it from Saved › Places. There is no GPS or automatic underground tracking.
-- **Confirmed checkpoints:** record a recognized place with a name and time. Confirmation updates the manual position estimate. Dashed lines connect recorded points in order; they do not follow passages or provide turn-by-turn directions.
-- **Offline check:** from the library, check all maps; from the viewer, use Settings › Offline access. The app checks cached shell files and reads/decodes every prepared tile in a worker, one at a time. Progress, cancellation, missing/damaged tile errors and the last successful check time are shown. This check uses local storage only.
+- **Dark map (on by default):** the overview tile is analysed once. Light maps are inverted with hue preserved and contrast stretched so the paper becomes **pure black** (OLED pixels off, which saves battery) and the ink stays bright but not glaring. Dark-gray maps have their background deepened to black without inverting. Maps that are already black are left untouched. The margin around the map is also pure black. The map starts slightly dimmed (85%) so your routes and places stand out; they stay at full strength unless you dim further. **View › brightness** adjusts it (20–100%); the Dark map switch is in View too. Only the canvas is filtered; the original files and tiles are untouched. This is a software display adjustment, not hardware brightness control.
+- **Add (+):** opens no panel. The pill stays put, its **+** turns into **×**, and two big buttons, **Place** and **Route**, rise just above it. Then just tap the map: a slim hint above the pill says what to tap (routes add **Undo** and **Done** at its end), and the same **×** cancels, so the way out is always where you came in. While placing, Saved and View wait until you're done. Tapping a spot for a place opens a card at the bottom with the five kinds shown as their map pins and a prefilled name such as "Landmark 3" (it follows the kind until you type your own), so **Save** works without the keyboard; a note is one **Add note** tap away.
+- **Planned routes:** Add › Route starts drawing right away. Tap along passages; while drawing or editing, the points become handles you can **drag** to adjust (pinching still zooms). Points snap to nearby places when tapped or dropped, and **Undo** steps back through your taps and drags. **Done** saves the route once it has 2 or more points. **×** cancels: a new route is discarded and a continued or edited one goes back to how it was; if that would throw away 2 or more points it asks first (tap × again). Routes get distinct colors with start and end markers. In **Saved**, tap a route to frame it; its **⋯** menu continues it, edits its points, renames it or deletes it (tap Delete twice).
+- **View:** a **Map** card (dark map, brightness, and rotation while Lock is off), a **Show on map** card with a switch for routes, places and names, then a **Highlight** button. **Highlight** darkens the map for a few seconds while every saved item glows and pulses, including hidden layers.
+- **Saved:** one list with a Routes section and a Places section; each place shows the same pin as on the map. Tap a row to jump to it. Its **⋯** opens a small menu beside it: routes have Edit points (or Continue), Rename and Delete; places have Edit, **Move** (the pin lifts: drag it or tap where it goes, then Done; × puts it back) and Delete. Delete asks for a second tap. Tap outside or press Escape to close the menu. There is no GPS or automatic underground tracking.
+- **Offline check:** from the library, use **Check offline access**. The app checks cached shell files and reads/decodes every prepared tile in a worker, one at a time. Progress, cancellation, missing/damaged tile errors and the last successful check time are shown. This check uses local storage only.
 - **Resume:** reopening the app restores the last map and its center, zoom and rotation. Going home retains each map's camera but opens the library on the next launch.
-- **Field controls:** touch lock (top right) freezes gestures, wheel and keyboard movement and needs a one-second hold to unlock; it stays enabled after reopening. Map rotation is locked by default; turning off View › Lock rotation enables two-finger twist and shows a rotation slider with 15° buttons. The compass resets to north up even while rotation is locked. Pan buttons are under Settings.
+- **Rotation lock:** map rotation is locked by default; dragging and zooming always work. Tapping **Lock** in the bottom pill enables two-finger twist and shows a rotation slider with 15° buttons in View; set the slider to 0° for north up.
 
-**Phone orientation is separate from map rotation.** The device-lock button requests the browser's Screen Orientation API, entering fullscreen when needed. Support/permission varies; on unsupported or denied requests the app tells you to use your phone's system rotation lock. Map rotation lock works independently. Device lock is released when leaving the viewer and must be requested again next time.
+**Phone orientation is separate from map rotation.** The app does not control the phone's screen orientation; use your phone's own rotation lock for that. **Lock** only controls map rotation.
 
-Notes, routes, checkpoints, camera and display settings are saved locally in a separate IndexedDB store. Camera writes are throttled and flushed on home, visibility changes and pagehide. Abrupt OS termination can still lose the latest uncommitted change. See [validation.md](docs/validation.md) for the physical-device acceptance checklist.
+Notes, routes, camera and display settings are saved locally in a separate IndexedDB store. Camera writes are throttled and flushed on home, visibility changes and pagehide. Abrupt OS termination can still lose the latest uncommitted change. See [validation.md](docs/validation.md) for the physical-device acceptance checklist.
 
 ## Test
 
@@ -163,7 +159,7 @@ For device profiling, `window.MapViewer.diagnostics()` reports decoded tile byte
 - Browser storage is origin-local. `persist()` is requested but can be refused. Clearing website data, storage eviction, or uninstall behavior can remove imported maps; keep your source files. HTTPS, hostname, and port changes create a different library.
 - The shell is precached atomically, including the worker and WASM. Updates wait until the old app windows close. Deployment currently assumes the origin root, not a subdirectory.
 - Real iOS/Android installation, Airplane Mode cold launch, process-memory ceilings, and sustained touch FPS still require physical-device validation.
-- Device orientation locking is best effort; map rotation locking is application-controlled. Checkpoints and routes are manually entered, without positioning sensors, pathfinding or scale calibration.
+- Screen orientation is left to the phone; map rotation locking is application-controlled. Places and routes are manually entered, without positioning sensors, pathfinding or scale calibration.
 
 ## Next improvement
 

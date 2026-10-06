@@ -36,11 +36,10 @@ RSS includes Node, the TypeScript runner, native-canvas, encoding buffers, alloc
 - Atomic service-worker shell inventory and cold offline handler behavior.
 - Rotated fit/inverse transforms, twist anchor preservation, rotated visible-tile coverage and saved views across viewport changes.
 - Upgrade from IndexedDB v1 without losing maps or payloads; navigation/settings persistence, serialized saves and protection against late writes after deletion.
-- Touch/rotation locks, editing taps, one-second hold-to-unlock, bookmark editing, manual estimates, checkpoint confirmation, draft undo and route completion through Node DOM/event adapters.
+- Touch/rotation locks, editing taps, one-second hold-to-unlock, bookmark editing, draft undo and route completion through Node DOM/event adapters.
 - Real viewer canvas code through a Node DOM/native-canvas adapter: restored rotation, rotation retention during fit animation, inversion/dimming restricted to the canvas, compensated dark margins, legible overlay labels and locked camera controls.
 - Offline verification worker detecting damaged/missing tiles while retaining at most one decoded verification bitmap. Service-worker shell verification detects a missing WASM cache entry without network fallback.
-- Device orientation API mocks covering unsupported, accepted and denied locks, fullscreen rollback and unlock failure. These verify request handling, not actual phone capability.
-- Tools-sheet controls through the Node DOM adapter: tab selection/arrow-key navigation, outside/Close/Escape dismissal, normal toolbar restoration, contextual placement controls and locked/unlocked transitions. Layout appearance and touch ergonomics still need physical-device review.
+- Tools-sheet controls through the Node DOM adapter: saved-row ⋯ popover menus (outside tap/Escape), moving places, route-point dragging with undo, snapping and clamping, outside/Close/Escape dismissal, normal toolbar restoration, the Add pill swap (Place / Route), tap-to-place with a prefilled place card and locked/unlocked transitions. Layout appearance and touch ergonomics still need physical-device review.
 
 ## Physical-device acceptance checklist — pending
 
@@ -55,8 +54,8 @@ Use the **production** HTTPS preview and keep the same origin. No browser/comput
 7. Repeat installation, offline cold launch, persistence, pinch gestures and memory checks on Android Chrome. Also validate WebP/interlaced PNG below 16 MP, explicit rejection above that limit, and the IndexedDB fallback on a browser without OPFS.
 8. Check all imported maps offline, including a deliberately missing tile in a disposable test map; verify progress/cancel and failed-map reporting. Repeat the check in Airplane Mode.
 9. Invert a detailed 9k map and lower its map light. Verify dark margins, readable cyan/amber/purple overlays and smooth gestures. Compare native/compositor memory and active movement pacing with filters on/off.
-10. Test default map rotation lock with pinch/twist; unlock, rotate with two fingers and buttons, fit, resize, relock and reopen. Test device orientation request in standalone and browser modes; unsupported/denied requests must report the system-lock fallback clearly.
-11. Add/edit notes, plan a return route, close with an unfinished draft, reopen and continue. Place a manual estimate, confirm recognizable checkpoints and jump between landmarks. Verify overlay alignment through rotation/native zoom and persistence after restart.
-12. Enable touch lock, try pinch/drag/double tap/wheel/keyboard, then reopen while locked. Brief taps must not unlock; a deliberate one-second hold must. Verify hold cancellation when the app becomes hidden and availability of the home control.
+10. Test default map rotation lock with pinch/twist; unlock, rotate with two fingers and buttons, fit, resize, relock and reopen.
+11. Add/edit notes, plan a return route, close with an unfinished draft, reopen and continue. Jump between saved places and confirm that a map saved with checkpoints by an older version shows them as landmark places. Drag route points while editing (including a second finger mid-drag, which should put the point back and pinch), move a place from its ⋯ menu, and check the ⋯ menu opens upward near the bottom of the panel. Verify overlay alignment through rotation/native zoom and persistence after restart.
+12. Tap **Lock** in the bottom pill: with it on (orange), drag, pinch and double tap still move/zoom but a two-finger twist must not rotate; with it off, twisting rotates and View shows the rotation slider. Reopen the map and confirm the lock state is kept.
 
 The next engineering decision should follow these device results: tune scanline/cache budgets and import tile encoding before increasing supported formats or implementing future map features.

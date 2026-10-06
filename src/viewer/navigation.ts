@@ -13,11 +13,8 @@ export interface MapMarker {
   kind: "bookmark" | "entrance" | "junction" | "landmark" | "note";
   created: number;
 }
-export interface ManualPosition {
-  point: Point;
-  updated: number;
-}
-export interface Checkpoint {
+/** Saved by older versions; now loaded as places. */
+interface LegacyCheckpoint {
   id: string;
   point: Point;
   label: string;
@@ -33,15 +30,11 @@ export interface PlannedRoute {
 export interface Layers {
   places: boolean;
   routes: boolean;
-  checkpoints: boolean;
-  position: boolean;
   labels: boolean;
 }
 export const layerNames = [
   "places",
   "routes",
-  "checkpoints",
-  "position",
   "labels",
 ] as const satisfies readonly (keyof Layers)[];
 export interface NavigationState {
@@ -54,40 +47,59 @@ export interface NavigationState {
   touchLocked: boolean;
   markers: MapMarker[];
   routes: PlannedRoute[];
-  position?: ManualPosition;
-  checkpoints: Checkpoint[];
   layers: Layers;
 }
-export type Tool = "browse" | "marker" | "position" | "checkpoint" | "route";
+/** Slightly dimmed by default so routes and places stand out from the map. */
+export const DEFAULT_DIMMING = 0.85;
+/** marker: tap to drop a new place · route: draw/edit · move: reposition a place */
+export type Tool = "browse" | "marker" | "route" | "move";
 export function defaultNavigation(mapId: string): NavigationState {
   return {
     mapId,
     rotationLocked: true,
     inverted: true, // Underground use: start dark and save OLED battery.
-    dimming: 1,
+    dimming: DEFAULT_DIMMING,
     touchLocked: false,
     markers: [],
     routes: [],
-    checkpoints: [],
     layers: {
       places: true,
       routes: true,
-      checkpoints: true,
-      position: true,
       labels: true,
     },
   };
 }
 // Older saves predate layer visibility; fill any missing fields from defaults.
-export function normalizeNavigation(
-  stored: Partial<NavigationState> & { mapId: string },
-): NavigationState {
+// Saves from before the manual position was removed may still carry it; drop it.
+// Checkpoints were merged into places, so older ones become landmark places.
+type StoredNavigation = Partial<NavigationState> & {
+  mapId: string;
+  position?: unknown;
+  checkpoints?: LegacyCheckpoint[];
+};
+export function normalizeNavigation(stored: StoredNavigation): NavigationState {
   const defaults = defaultNavigation(stored.mapId);
-  return {
-    ...defaults,
-    ...stored,
-    layers: { ...defaults.layers, ...stored.layers },
-  };
+  const current: StoredNavigation = { ...stored };
+  delete current.position;
+  delete current.checkpoints;
+  const layers = { ...defaults.layers };
+  for (const name of layerNames)
+    if (typeof stored.layers?.[name] === "boolean")
+      layers[name] = stored.layers[name];
+  const markers = [
+    ...(stored.markers ?? []),
+    ...(stored.checkpoints ?? []).map(
+      (checkpoint): MapMarker => ({
+        id: checkpoint.id,
+        point: checkpoint.point,
+        label: checkpoint.label,
+        note: "",
+        kind: "landmark",
+        created: checkpoint.confirmed,
+      }),
+    ),
+  ];
+  return { ...defaults, ...current, markers, layers };
 }
 // Distinct, high-contrast colors on both black and light maps.
 export const routeColors = ["#38d6ff", "#ff6bd6", "#ffd23f", "#7dff8a", "#b18cff"];
