@@ -26,6 +26,11 @@ body {
   margin: 0;
   background: var(--bg);
 }
+/* Anything the viewer doesn't cover stays the map's black. */
+html:has(body.viewing),
+body.viewing {
+  background: #000;
+}
 button,
 a,
 input,
@@ -450,6 +455,27 @@ dialog textarea {
   --c: var(--accent);
   --fill: rgb(255 255 255 / 0.07);
   --fill-strong: rgb(255 255 255 / 0.13);
+}
+/* iOS's installed app stops a fixed inset: 0 box short of the home
+   indicator; the large viewport is the whole screen there. */
+@media (display-mode: standalone) {
+  .viewer {
+    bottom: auto;
+    height: 100vh;
+    height: 100lvh;
+  }
+}
+/* A solid fixed box over the top edge keeps iOS 26 from blurring the map
+   under the status bar; it uses this color instead. */
+.status-bar-fill {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: env(safe-area-inset-top);
+  background: #000;
+  z-index: 4;
+  pointer-events: none;
 }
 .viewer canvas {
   width: 100%;
