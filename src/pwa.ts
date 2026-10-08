@@ -1,20 +1,15 @@
-export async function registerOfflineShell(onStatus: (ready: boolean) => void) {
-  if (!import.meta.env.PROD || !("serviceWorker" in navigator)) {
-    onStatus(false);
-    return;
-  }
+// Prepare the offline shell automatically; explicit checks verify readiness.
+export async function registerOfflineShell() {
+  if (!import.meta.env.PROD || !("serviceWorker" in navigator)) return;
   try {
     const registration = await navigator.serviceWorker.register("/sw.js", {
       scope: "/",
       updateViaCache: "none",
     });
     await navigator.serviceWorker.ready;
-    onStatus(true);
     // Installation is atomic: ready means every shell asset, including WASM, cached.
     void registration.update().catch(() => {});
-  } catch {
-    onStatus(false);
-  }
+  } catch {} // Offline checks report unavailable or incomplete setup.
 }
 
 export async function verifyOfflineShell(): Promise<{

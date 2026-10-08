@@ -16,10 +16,10 @@ import { verifyMap } from "./storage/verify";
 const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
   <main class="home" id="home">
-    <header class="header"><div class="library-brand"><span class="library-logo">${icons.map}</span><h1>Mega Maps</h1></div><span class="offline-status" id="offline-status" role="status"><i></i><span>Getting ready</span></span></header>
+    <header class="header"><div class="library-brand"><span class="library-logo">${icons.map}</span><h1>Mega Maps</h1></div><button class="update-app" id="update-app">${icons.rotateRight}<span>Update app</span></button></header>
     <div class="library-actions"><button class="library-action import-trigger">${icons.plus}<span>Import map</span></button><button id="check-all-offline" class="library-action">${icons.check}<span>Check offline access</span></button></div>
     <section class="library" aria-labelledby="library-title"><div class="section-heading"><h2 id="library-title">Your maps <span id="map-count">0</span></h2></div><div class="map-list" id="map-grid"></div><div class="empty" id="empty" hidden><span class="empty-icon">${icons.map}</span><h3>Your next route starts here</h3><p>Import a JPEG, PNG or WebP map.<br>Keep it with you, even offline.</p></div></section>
-    <footer class="library-footer"><span>Stored on this device</span><div class="library-dock"><button class="update-app">${icons.rotateRight}<span>Check for updates</span></button><button id="install-help">${icons.plus}<span>Add to Home Screen</span></button></div></footer>
+    <footer class="library-footer"><span>Stored on this device</span><div class="library-dock"><button id="install-help">${icons.plus}<span>Add to Home Screen</span></button></div></footer>
   </main>
   <section id="viewer" class="viewer" aria-label="Map viewer" hidden>${viewerMarkup}</section>
   <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" hidden>
@@ -336,8 +336,7 @@ element("message-close").addEventListener("click", () => messageDialog.close());
 messageDialog.addEventListener("cancel", (event) => {
   if (updating) event.preventDefault();
 });
-for (const button of document.querySelectorAll<HTMLButtonElement>(".update-app"))
-  button.addEventListener("click", () => void updateApp());
+element("update-app").addEventListener("click", () => void updateApp());
 
 // Keep the current map/session and wait for durable saves before reloading.
 async function updateApp() {
@@ -405,7 +404,7 @@ document.addEventListener("keydown", (event) => {
 element("install-help").addEventListener("click", () =>
   showMessage(
     "Install Mega Maps",
-    "On iPhone: open in Safari, tap Share, then Add to Home Screen. On Android: open the Chrome menu and choose Install app or Add to Home Screen. Wait for “Offline ready” before going offline.",
+    "On iPhone: open in Safari, tap Share, then Add to Home Screen. On Android: open the Chrome menu and choose Install app or Add to Home Screen. Import your maps, then use “Check offline access” before going offline.",
   ),
 );
 channel?.addEventListener("message", () => {
@@ -414,15 +413,7 @@ channel?.addEventListener("message", () => {
       showMessage("Storage unavailable", String(error)),
     );
 });
-void registerOfflineShell((ready) => {
-  const status = element("offline-status");
-  status.classList.toggle("ready", ready);
-  status.querySelector("span")!.textContent = ready
-    ? "Offline ready"
-    : import.meta.env.DEV
-      ? "Development"
-      : "Offline setup pending";
-});
+void registerOfflineShell();
 async function start() {
   await mutate(async () => {
     for (const map of await listMaps())

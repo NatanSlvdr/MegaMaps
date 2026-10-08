@@ -117,27 +117,27 @@ svg {
   font-weight: 700;
   letter-spacing: -0.6px;
 }
-.offline-status {
+.update-app {
   font-size: 12px;
-  color: var(--muted);
+  font-weight: 650;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 7px;
   white-space: nowrap;
-  padding: 7px 11px;
+  min-height: 44px;
+  padding: 10px 12px;
   border-radius: 99px;
   background: #000;
-  border: 1px solid var(--line);
+  border: 1px solid color-mix(in srgb, var(--neon-view) 40%, transparent);
 }
-.offline-status i {
-  width: 7px;
-  height: 7px;
-  background: #5d646c;
-  border-radius: 50%;
+.update-app svg {
+  width: 18px;
+  height: 18px;
+  color: var(--neon-view);
 }
-.offline-status.ready i {
-  background: var(--neon-add);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--neon-add) 45%, transparent);
+.update-app:active:not(:disabled) {
+  background: color-mix(in srgb, var(--neon-view) 18%, #000);
 }
 .library-actions {
   display: grid;
