@@ -12,6 +12,7 @@ import { viewerMarkup } from "./ui/viewer-markup";
 import { ViewerControls } from "./ui/viewer-controls";
 import { loadNavigation, lastMap, setLastMap } from "./storage/navigation";
 import { verifyMap } from "./storage/verify";
+import { initLibraryFooter } from "./ui/library-footer";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
@@ -19,7 +20,7 @@ app.innerHTML = `
     <header class="header"><div class="library-brand"><span class="library-logo">${icons.map}</span><h1>Mega Maps</h1></div><button class="update-app" id="update-app">${icons.rotateRight}<span>Update app</span></button></header>
     <div class="library-actions"><button class="library-action import-trigger">${icons.plus}<span>Import map</span></button><button id="check-all-offline" class="library-action">${icons.check}<span>Check offline access</span></button></div>
     <section class="library" aria-labelledby="library-title"><div class="section-heading"><h2 id="library-title">Your maps <span id="map-count">0</span></h2></div><div class="map-list" id="map-grid"></div><div class="empty" id="empty" hidden><span class="empty-icon">${icons.map}</span><h3>Your next route starts here</h3><p>Import a JPEG, PNG or WebP map.<br>Keep it with you, even offline.</p></div></section>
-    <footer class="library-footer"><span>Stored on this device</span><div class="library-dock"><button id="install-help">${icons.plus}<span>Add to Home Screen</span></button></div></footer>
+    <footer class="library-footer"><div class="app-updated"><span>Last app update</span><time id="app-updated-at">Checking…</time></div><div class="connection-status" role="status" aria-live="polite"><span id="internet-status">Checking connection…</span><span id="app-availability">Checking live app…</span><span id="offline-availability">Checking offline app…</span></div></footer>
   </main>
   <section id="viewer" class="viewer" aria-label="Map viewer" hidden>${viewerMarkup}</section>
   <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" hidden>
@@ -36,6 +37,7 @@ const fileInput = element<HTMLInputElement>("file-input");
 const progressDialog = element<HTMLDialogElement>("progress-dialog");
 const messageDialog = element<HTMLDialogElement>("message-dialog");
 const deleteDialog = element<HTMLDialogElement>("delete-dialog");
+const refreshFooter = initLibraryFooter(home);
 let controls: ViewerControls | undefined;
 let pendingViewSave = Promise.resolve();
 let openVersion = 0;
@@ -85,6 +87,7 @@ function closeViewer() {
   );
   viewerSection.hidden = true;
   home.hidden = false;
+  void refreshFooter();
   document.body.classList.remove("viewing");
   void refresh().catch((error) =>
     showMessage("Storage unavailable", String(error)),
@@ -401,19 +404,13 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !controls?.escape()) closeViewer();
   if (event.key === "0" || event.key.toLowerCase() === "f") viewer.fit();
 });
-element("install-help").addEventListener("click", () =>
-  showMessage(
-    "Install Mega Maps",
-    "On iPhone: open in Safari, tap Share, then Add to Home Screen. On Android: open the Chrome menu and choose Install app or Add to Home Screen. Import your maps, then use “Check offline access” before going offline.",
-  ),
-);
 channel?.addEventListener("message", () => {
   if (!importing)
     void refresh().catch((error) =>
       showMessage("Storage unavailable", String(error)),
     );
 });
-void registerOfflineShell();
+void registerOfflineShell().then(refreshFooter);
 async function start() {
   await mutate(async () => {
     for (const map of await listMaps())

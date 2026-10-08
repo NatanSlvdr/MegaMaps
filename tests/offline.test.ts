@@ -13,11 +13,12 @@ test("generated service worker serves cold offline navigation, worker JS, and co
     await mkdir(path.join(root, "dist/assets"), { recursive: true });
     await mkdir(path.join(root, "dist/codecs"));
     const assets = {
-      "/index.html": '<html><meta name="app-build" content="__APP_BUILD__">offline</html>',
+      "/index.html": '<html><meta name="app-build" content="__APP_BUILD__"><meta name="app-built-at" content="__APP_BUILT_AT__">offline</html>',
       "/assets/import.worker.js": "worker",
       "/codecs/jpeg.js": "decoder",
       "/codecs/jpeg.wasm": "wasm",
       "/manifest.webmanifest": "{}",
+      "/app-status.json": '{"app":"mega-maps"}',
     };
     for (const [name, contents] of Object.entries(assets))
       await writeFile(path.join(root, "dist", name), contents);
@@ -29,6 +30,8 @@ test("generated service worker serves cold offline navigation, worker JS, and co
     const script = await readFile(path.join(root, "dist/sw.js"), "utf8");
     assets["/index.html"] = await readFile(path.join(root, "dist/index.html"), "utf8");
     assert.ok(!assets["/index.html"].includes("__APP_BUILD__"));
+    const builtAt = assets["/index.html"].match(/name="app-built-at" content="([^"]+)"/)?.[1];
+    assert.ok(builtAt && Number.isFinite(new Date(builtAt).getTime()));
     const listeners = new Map<string, (event: unknown) => void>();
     const stores = new Map<string, Map<string, Response>>();
     let network = 0,
@@ -101,7 +104,14 @@ test("generated service worker serves cold offline navigation, worker JS, and co
     }
     await lifecycle("install");
     assert.equal(skipped, true);
-    assert.equal(fetched.length, Object.keys(assets).length);
+    assert.equal(fetched.length, Object.keys(assets).length - 1);
+    assert.ok(!fetched.includes("/app-status.json"), "live availability is never precached");
+    let intercepted = false;
+    listeners.get("fetch")!({
+      request: { url: "https://map.local/app-status.json?check=123", method: "GET", mode: "cors" },
+      respondWith: () => { intercepted = true; },
+    });
+    assert.equal(intercepted, false, "availability probes go straight to the network");
     stores.set("map-viewer-shell-old", new Map());
     stores.set("unrelated-user-cache", new Map([["saved", new Response("keep me")]]));
     await lifecycle("activate");

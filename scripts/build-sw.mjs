@@ -10,8 +10,12 @@ async function files(dir) {
     )
   ).flat();
 }
+// The footer shows the release date of the loaded build, including offline.
+const html = await readFile("dist/index.html", "utf8");
+await writeFile("dist/index.html", html.replace("__APP_BUILT_AT__", new Date().toISOString()));
 const paths = (await files("dist")).filter((p) => !p.endsWith("/sw.js"));
-const urls = paths.map((p) => `/${p.slice(5)}`);
+// The availability probe must always reach the host, never the offline cache.
+const urls = paths.filter((p) => !p.endsWith("/app-status.json")).map((p) => `/${p.slice(5)}`);
 // Hosts with pretty URLs (Cloudflare assets, Netlify…) redirect /index.html to /.
 // Safari refuses to open a page from a service-worker response that was
 // redirected, so the shell is fetched from / and every cached response is
@@ -80,8 +84,8 @@ const hash = createHash("sha256").update(worker);
 for (const path of paths.sort()) hash.update(await readFile(path));
 const cacheName = `map-viewer-shell-${hash.digest("hex").slice(0, 16)}`;
 // Stamp the loaded HTML too: an open page can be older than its active worker.
-const html = await readFile("dist/index.html", "utf8");
-await writeFile("dist/index.html", html.replace("__APP_BUILD__", cacheName));
+const stampedHtml = await readFile("dist/index.html", "utf8");
+await writeFile("dist/index.html", stampedHtml.replace("__APP_BUILD__", cacheName));
 await writeFile(
   "dist/sw.js",
   `
