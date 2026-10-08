@@ -1,24 +1,23 @@
 import "./style.css";
 import { tileKey, type MapRecord } from "./types";
-import { listMaps, saveMap } from "./storage/database";
+import { listMaps } from "./storage/database";
 import { payloadStore, deleteStoredMap } from "./storage/payloads";
 import { importMap } from "./processing/import";
 import { Viewer } from "./viewer/viewer";
-import { registerOfflineShell, verifyOfflineShell } from "./pwa";
+import { registerOfflineShell } from "./pwa";
 import { checkForAppUpdate } from "./app-update";
 import { icons } from "./ui/icons";
 import { formatBytes } from "./ui/format";
 import { viewerMarkup } from "./ui/viewer-markup";
 import { ViewerControls } from "./ui/viewer-controls";
 import { loadNavigation, lastMap, setLastMap } from "./storage/navigation";
-import { verifyMap } from "./storage/verify";
 import { initLibraryFooter } from "./ui/library-footer";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
   <main class="home" id="home">
     <header class="header"><div class="library-brand"><span class="library-logo">${icons.map}</span><h1>Mega Maps</h1></div><button class="update-app" id="update-app">${icons.rotateRight}<span>Update app</span></button></header>
-    <div class="library-actions"><button class="library-action import-trigger">${icons.plus}<span>Import map</span></button><button id="check-all-offline" class="library-action">${icons.check}<span>Check offline access</span></button></div>
+    <div class="library-actions"><button class="library-action import-trigger">${icons.plus}<span>Import map</span></button></div>
     <section class="library" aria-labelledby="library-title"><div class="section-heading"><h2 id="library-title">Your maps <span id="map-count">0</span></h2></div><div class="map-list" id="map-grid"></div><div class="empty" id="empty" hidden><span class="empty-icon">${icons.map}</span><h3>Your next route starts here</h3><p>Import a JPEG, PNG or WebP map.<br>Keep it with you, even offline.</p></div></section>
     <footer class="library-footer"><div class="app-updated"><span>Last app update</span><time id="app-updated-at">Checking…</time></div><div class="connection-status" role="status" aria-live="polite"><span id="internet-status">Checking connection…</span><span id="app-availability">Checking live app…</span><span id="offline-availability">Checking offline app…</span></div></footer>
   </main>
@@ -41,7 +40,6 @@ const refreshFooter = initLibraryFooter(home);
 let controls: ViewerControls | undefined;
 let pendingViewSave = Promise.resolve();
 let openVersion = 0;
-let checking: AbortController | undefined;
 let updating = false;
 let viewer: Viewer | undefined,
   currentMap: MapRecord | undefined,
@@ -131,93 +129,6 @@ async function openMap(map: MapRecord) {
     }
   }
 }
-async function checkOffline(selected: MapRecord[]) {
-  if (importing || checking) return;
-  if (!selected.length) {
-    showMessage(
-      "No maps to check",
-      "Import a map first, then verify it before your trip.",
-    );
-    return;
-  }
-  checking = new AbortController();
-  const controller = checking;
-  element("progress-title").textContent = "Checking offline access";
-  element("progress-note").textContent =
-    "Every stored tile is checked locally. Keep Mega Maps open.";
-  element("cancel-import").textContent = "Cancel check";
-  element("import-name").textContent = "App shell and map details";
-  element("progress-fill").style.width = "0%";
-  element("progress-percent").textContent = "0%";
-  element("progress-message").textContent = "Checking cached app files…";
-  progressDialog.showModal();
-  const failures: string[] = [];
-  let verified = 0;
-  try {
-    const shell = await verifyOfflineShell();
-    if (!shell.ready) throw new Error(shell.message);
-    if (controller.signal.aborted)
-      throw new DOMException("Check cancelled.", "AbortError");
-    await mutate(async () => {
-      // Refresh records under the same lock used by imports/deletes in every tab.
-      const records = await listMaps();
-      for (let index = 0; index < selected.length; index++) {
-        const map = records.find(
-          (record) =>
-            record.id === selected[index]!.id && record.status === "ready",
-        );
-        if (!map) {
-          failures.push(`${selected[index]!.name}: unavailable`);
-          continue;
-        }
-        element("import-name").textContent = map.name;
-        try {
-          await verifyMap(
-            map,
-            (fraction) => {
-              const overall = (index + fraction) / selected.length;
-              element("progress-fill").style.width = `${overall * 100}%`;
-              element("progress-percent").textContent =
-                `${Math.round(overall * 100)}%`;
-              element("progress-message").textContent =
-                `Checking map ${index + 1} of ${selected.length}…`;
-            },
-            controller.signal,
-          );
-          await saveMap({ ...map, offlineVerifiedAt: Date.now() });
-          verified++;
-        } catch (error) {
-          if (error instanceof DOMException && error.name === "AbortError")
-            throw error;
-          await saveMap({ ...map, offlineVerifiedAt: undefined });
-          failures.push(
-            `${map.name}: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-      }
-    });
-    channel?.postMessage("changed");
-    await refresh();
-    progressDialog.close();
-    showMessage(
-      failures.length ? "Some maps need attention" : "Ready offline",
-      failures.length
-        ? `${verified} map(s) checked successfully. Reimport the affected maps:
-${failures.join("\n")}`
-        : `App shell and every tile of ${verified} map(s) checked on this device. Last checked ${new Date().toLocaleString()}.`,
-    );
-  } catch (error) {
-    progressDialog.close();
-    if (!(error instanceof DOMException && error.name === "AbortError"))
-      showMessage(
-        "Offline check incomplete",
-        error instanceof Error ? error.message : String(error),
-      );
-  } finally {
-    progressDialog.close();
-    checking = undefined;
-  }
-}
 async function refresh() {
   const version = ++renderVersion;
   const records = await listMaps();
@@ -250,7 +161,7 @@ async function refresh() {
     card.querySelector(".dimensions")!.textContent =
       `${map.width.toLocaleString()} × ${map.height.toLocaleString()} px`;
     card.querySelector(".map-size")!.textContent =
-      `${formatBytes(map.bytes)}${map.offlineVerifiedAt ? " · Offline checked" : ""}`;
+      formatBytes(map.bytes);
     card.querySelector(".map-open")!.addEventListener("click", () => {
       void openMap(map);
     });
@@ -286,7 +197,7 @@ for (const button of document.querySelectorAll(".import-trigger"))
 fileInput.addEventListener("change", () => {
   const file = fileInput.files?.[0];
   fileInput.value = "";
-  if (!file || importing || checking) return;
+  if (!file || importing) return;
   importing = new AbortController();
   const controller = importing;
   element("progress-title").textContent = "Preparing map";
@@ -328,12 +239,10 @@ fileInput.addEventListener("change", () => {
 });
 element("cancel-import").addEventListener("click", () => {
   importing?.abort();
-  checking?.abort();
 });
 progressDialog.addEventListener("cancel", (event) => {
   event.preventDefault();
   importing?.abort();
-  checking?.abort();
 });
 element("message-close").addEventListener("click", () => messageDialog.close());
 messageDialog.addEventListener("cancel", (event) => {
@@ -344,8 +253,8 @@ element("update-app").addEventListener("click", () => void updateApp());
 // Keep the current map/session and wait for durable saves before reloading.
 async function updateApp() {
   if (updating) return;
-  if (importing || checking) {
-    showMessage("App update", "Finish the current import or offline check, then try again.");
+  if (importing) {
+    showMessage("App update", "Finish the current import, then try again.");
     return;
   }
   if (!import.meta.env.PROD || !("serviceWorker" in navigator)) {
@@ -389,9 +298,6 @@ element("delete-confirm").addEventListener("click", () => {
     .catch((error) => showMessage("Couldn’t delete map", String(error)));
 });
 element("back").addEventListener("click", closeViewer);
-element("check-all-offline").addEventListener("click", () => {
-  void checkOffline(maps);
-});
 document.addEventListener("keydown", (event) => {
   if (
     !viewer ||

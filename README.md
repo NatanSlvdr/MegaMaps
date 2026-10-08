@@ -18,7 +18,7 @@ npm run build
 npm run preview
 ```
 
-Production preview: **http://localhost:4173**. Import a map, run **Check offline access**, then go offline and reload after the check succeeds. Keep the same origin/port: browser storage belongs to the origin. Build output is in `dist/` and can be served by any static HTTPS host.
+Production preview: **http://localhost:4173**. Import a map, wait for **Available offline** in the footer, then go offline and reload. Keep the same origin/port: browser storage belongs to the origin. Build output is in `dist/` and can be served by any static HTTPS host.
 
 ## Deploy to Cloudflare
 
@@ -41,7 +41,7 @@ MAP_VIEWER_HTTPS_CERT=/absolute/path/cert.pem \
 MAP_VIEWER_HTTPS_KEY=/absolute/path/key.pem npm run preview
 ```
 
-Open the HTTPS LAN URL shown by Vite. In Safari, Share → Add to Home Screen; in Chrome, menu → Install app. Finish importing and run **Check offline access** successfully before enabling Airplane Mode. Safari/iOS 17+ is the recommended minimum; current Android Chrome and desktop Safari/Chrome/Firefox are the development targets.
+Open the HTTPS LAN URL shown by Vite. In Safari, Share → Add to Home Screen; in Chrome, menu → Install app. Finish importing and wait for **Available offline** in the footer before enabling Airplane Mode. Safari/iOS 17+ is the recommended minimum; current Android Chrome and desktop Safari/Chrome/Firefox are the development targets.
 
 ## Project structure
 
@@ -99,7 +99,7 @@ The original remains locally stored. Metadata is committed as ready **only after
 
 **Updating without reinstalling:** use **Update app** beside the Mega Maps title in the main menu. While online, the app downloads and verifies the latest application files, saves pending navigation changes, and reloads when a newer version is ready. Maps, places, routes and settings stay in their existing on-device storage. If installation or saving fails, the page stays open. Reinstalling is unnecessary for ordinary updates; iOS installation settings such as the status-bar style may still require a fresh Home Screen installation.
 
-The main-menu footer shows the release date of the loaded version, internet connectivity, live-site availability and verified offline-shell readiness. A fresh request checks the live site; cached files cannot produce a successful online check. When the browser reports a network but the site cannot be reached, internet connectivity is shown as unconfirmed. Offline readiness covers application files; use **Check offline access** to verify your maps too.
+The main-menu footer shows the release date of the loaded version, internet connectivity, live-site availability and verified offline-shell readiness. A fresh request checks the live site; cached files cannot produce a successful online check. When the browser reports a network but the site cannot be reached, internet connectivity is shown as unconfirmed. Offline readiness covers application files. Maps are stored locally when import completes; the footer does not check map tiles.
 
 Drag to pan; pinch to zoom. **Double-tap and drag** down/up zooms with one thumb; a plain double tap zooms in (at deep zoom it returns to fit). **Long-press** the map to drop a place. Wheel/trackpad zoom is centered on the cursor.
 
@@ -117,7 +117,6 @@ The map fills the screen. Fingers move it, so there are no zoom or pan buttons; 
 - **Planned routes:** Add › Route starts drawing right away. Tap along passages; while drawing or editing, the points become handles you can **drag** to adjust (pinching still zooms). Points snap to nearby places when tapped or dropped, and **Undo** steps back through your taps and drags. **Done** saves the route once it has 2 or more points. **×** cancels: a new route is discarded and a continued or edited one goes back to how it was; if that would throw away 2 or more points it asks first (tap × again). Routes get distinct colors with start and end markers. In **Saved**, tap a route to frame it; its **⋯** menu continues it, edits its points, renames it or deletes it (tap Delete twice).
 - **View:** a **Map** card (dark map, brightness, and rotation while Lock is off), a **Show on map** card with a switch for routes, places and names, then a **Highlight** button. **Highlight** darkens the map for a few seconds while every saved item glows and pulses, including hidden layers.
 - **Saved:** one list with a Routes section and a Places section; each place shows the same pin as on the map. Tap a row to jump to it. Its **⋯** opens a small menu beside it: routes have Edit points (or Continue), Rename and Delete; places have Edit, **Move** (the pin lifts: drag it or tap where it goes, then Done; × puts it back) and Delete. Delete asks for a second tap. Tap outside or press Escape to close the menu. There is no GPS or automatic underground tracking.
-- **Offline check:** from the library, use **Check offline access**. The app checks cached shell files and reads/decodes every prepared tile in a worker, one at a time. Progress, cancellation, missing/damaged tile errors and the last successful check time are shown. This check uses local storage only.
 - **Resume:** reopening the app restores the last map and its center, zoom and rotation. Going home retains each map's camera but opens the library on the next launch.
 - **Rotation lock:** map rotation is locked by default; dragging and zooming always work. Tapping **Lock** in the bottom pill enables two-finger twist and shows a rotation slider with 15° buttons in View; set the slider to 0° for north up.
 
