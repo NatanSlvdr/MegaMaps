@@ -1,4 +1,4 @@
-# Map Viewer
+# Mega Maps
 
 A mobile-first, private, offline PWA for exploring large local maps. No accounts, uploads, backend, external fonts, analytics, or runtime CDN dependencies.
 

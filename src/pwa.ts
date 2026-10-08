@@ -46,7 +46,7 @@ export async function verifyOfflineShell(): Promise<{
         finish({
           ready: false,
           message:
-            "Close other Map Viewer windows and reopen to finish the app update, then check again.",
+            "Close other Mega Maps windows and reopen to finish the app update, then check again.",
         }),
       5000,
     );

@@ -22,7 +22,7 @@ onmessage = async (event: MessageEvent<{ file: File; record: MapRecord }>) => {
       typeof createImageBitmap === "undefined"
     )
       throw new Error(
-        "Map Viewer needs a modern browser with worker canvas support (iOS 17+ recommended).",
+        "Mega Maps needs a modern browser with worker canvas support (iOS 17+ recommended).",
       );
     const header = await readHeader(file);
     if (header.orientation !== 1)

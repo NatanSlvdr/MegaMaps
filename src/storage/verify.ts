@@ -40,7 +40,7 @@ export function verifyMap(
       cleanup();
       reject(
         new Error(
-          "Offline check stopped. Try again with Map Viewer in the foreground.",
+          "Offline check stopped. Try again with Mega Maps in the foreground.",
         ),
       );
     };

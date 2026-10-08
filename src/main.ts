@@ -16,14 +16,14 @@ import { verifyMap } from "./storage/verify";
 const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
   <main class="home" id="home">
-    <header class="header"><div class="library-brand"><span class="library-logo">${icons.map}</span><h1>Map Viewer</h1></div><span class="offline-status" id="offline-status" role="status"><i></i><span>Getting ready</span></span></header>
+    <header class="header"><div class="library-brand"><span class="library-logo">${icons.map}</span><h1>Mega Maps</h1></div><span class="offline-status" id="offline-status" role="status"><i></i><span>Getting ready</span></span></header>
     <div class="library-actions"><button class="library-action import-trigger">${icons.plus}<span>Import map</span></button><button id="check-all-offline" class="library-action">${icons.check}<span>Check offline access</span></button></div>
     <section class="library" aria-labelledby="library-title"><div class="section-heading"><h2 id="library-title">Your maps <span id="map-count">0</span></h2></div><div class="map-list" id="map-grid"></div><div class="empty" id="empty" hidden><span class="empty-icon">${icons.map}</span><h3>Your next route starts here</h3><p>Import a JPEG, PNG or WebP map.<br>Keep it with you, even offline.</p></div></section>
     <footer class="library-footer"><span>Stored on this device</span><div class="library-dock"><button class="update-app">${icons.rotateRight}<span>Check for updates</span></button><button id="install-help">${icons.plus}<span>Add to Home Screen</span></button></div></footer>
   </main>
   <section id="viewer" class="viewer" aria-label="Map viewer" hidden>${viewerMarkup}</section>
   <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" hidden>
-  <dialog id="progress-dialog"><div class="dialog-icon">${icons.map}</div><h2 id="progress-title">Preparing map</h2><p id="import-name"></p><div class="progress-track"><div id="progress-fill"></div></div><div class="progress-info"><span id="progress-message">Reading image…</span><span id="progress-percent">0%</span></div><p class="dialog-note" id="progress-note">Keep Map Viewer open while your map is prepared.</p><button class="secondary" id="cancel-import">Cancel import</button></dialog>
+  <dialog id="progress-dialog"><div class="dialog-icon">${icons.map}</div><h2 id="progress-title">Preparing map</h2><p id="import-name"></p><div class="progress-track"><div id="progress-fill"></div></div><div class="progress-info"><span id="progress-message">Reading image…</span><span id="progress-percent">0%</span></div><p class="dialog-note" id="progress-note">Keep Mega Maps open while your map is prepared.</p><button class="secondary" id="cancel-import">Cancel import</button></dialog>
   <dialog id="message-dialog"><h2 id="message-title"></h2><p id="message-body"></p><button class="primary" id="message-close">Got it</button></dialog>
   <dialog id="delete-dialog"><h2>Delete this map?</h2><p id="delete-name"></p><p class="dialog-note">This removes the local copy and its tiles from this device.</p><div class="dialog-actions"><button class="secondary" id="delete-cancel">Keep map</button><button class="danger" id="delete-confirm">Delete map</button></div></dialog>
 `;
@@ -66,7 +66,7 @@ async function mutate<T>(work: () => Promise<T>): Promise<T | undefined> {
       (lock) => {
         if (!lock)
           throw new Error(
-            "Map Viewer is preparing a map in another window. Let it finish first.",
+            "Mega Maps is preparing a map in another window. Let it finish first.",
           );
         return work();
       },
@@ -141,7 +141,7 @@ async function checkOffline(selected: MapRecord[]) {
   const controller = checking;
   element("progress-title").textContent = "Checking offline access";
   element("progress-note").textContent =
-    "Every stored tile is checked locally. Keep Map Viewer open.";
+    "Every stored tile is checked locally. Keep Mega Maps open.";
   element("cancel-import").textContent = "Cancel check";
   element("import-name").textContent = "App shell and map details";
   element("progress-fill").style.width = "0%";
@@ -288,7 +288,7 @@ fileInput.addEventListener("change", () => {
   const controller = importing;
   element("progress-title").textContent = "Preparing map";
   element("progress-note").textContent =
-    "Keep Map Viewer open while your map is prepared.";
+    "Keep Mega Maps open while your map is prepared.";
   element("cancel-import").textContent = "Cancel import";
   element("import-name").textContent = file.name;
   element("progress-fill").style.width = "0%";
@@ -404,7 +404,7 @@ document.addEventListener("keydown", (event) => {
 });
 element("install-help").addEventListener("click", () =>
   showMessage(
-    "Install Map Viewer",
+    "Install Mega Maps",
     "On iPhone: open in Safari, tap Share, then Add to Home Screen. On Android: open the Chrome menu and choose Install app or Add to Home Screen. Wait for “Offline ready” before going offline.",
   ),
 );

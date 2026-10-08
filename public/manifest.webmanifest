@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "Map Viewer",
-  "short_name": "Map Viewer",
+  "name": "Mega Maps",
+  "short_name": "Mega Maps",
   "description": "Your maps, on your device. Explore offline.",
   "start_url": "/",
   "scope": "/",

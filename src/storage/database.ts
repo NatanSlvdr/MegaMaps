@@ -2,6 +2,7 @@ import type { MapRecord } from "../types";
 let opening: Promise<IDBDatabase> | undefined;
 export function database() {
   return (opening ??= new Promise<IDBDatabase>((resolve, reject) => {
+    // Keep the original database name so existing Mega Maps libraries stay accessible.
     const request = indexedDB.open("map-viewer", 2);
     request.onupgradeneeded = () => {
       const db = request.result;
@@ -30,7 +31,7 @@ export function database() {
     };
     request.onblocked = () => {
       opening = undefined;
-      reject(new Error("Close other Map Viewer tabs to update local storage."));
+      reject(new Error("Close other Mega Maps tabs to update local storage."));
     };
   }));
 }
