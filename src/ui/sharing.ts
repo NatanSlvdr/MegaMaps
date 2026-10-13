@@ -11,6 +11,7 @@ import { icons } from "./icons";
 import { t } from "../i18n";
 import { downloadFile } from "./save-file";
 import { placeIcon } from "./place-icon";
+import { authorText } from "./author";
 
 export const sharingMarkup = `
 <dialog id="share-dialog" class="sharing-dialog" aria-labelledby="share-title"><div id="share-main">${dialogHeader("share-title", t("Share map"), icons.share, "share-cancel")}<p class="share-map-name">${icons.map}<span id="share-map-name"></span></p><p id="share-loading" role="status">${t("Preparing share…")}</p>
@@ -314,8 +315,12 @@ export function initSharing(root: HTMLElement, options: SharingOptions) {
       if (version !== receiveVersion) return;
       const share = parsed.manifest;
       const photos = share.photos?.length ? ` · ${plural(share.photos.length, "photo")}` : "";
-      const from = share.from ? `\n${t("Shared by {name}", { name: share.from })}` : "";
-      el("receive-summary").textContent = `${displayName(share.map.name)}${from}\n${plural(share.markers.length, "place")}${photos} · ${plural(share.routes.length, "route")} · ${parsed.image ? t("Map image included") : t("Annotations only")}`;
+      // Files from before author IDs name the sender without a tag.
+      const sender = share.authors?.find((author) => author.id === share.fromId);
+      const from = sender ? authorText(root.ownerDocument, t("Shared by {name}"), sender)
+        : share.from ? [t("Shared by {name}", { name: share.from })] : [];
+      el("receive-summary").replaceChildren(displayName(share.map.name), ...(from.length ? ["\n", ...from] : []),
+        `\n${plural(share.markers.length, "place")}${photos} · ${plural(share.routes.length, "route")} · ${parsed.image ? t("Map image included") : t("Annotations only")}`);
       const available = (await options.maps()).filter((map) => map.status === "ready" && map.width === share.map.width && map.height === share.map.height);
       const exact = await matchingMaps(share, available, controller.signal);
       const states = await Promise.all(exact.map((id) => loadNavigation(id)));

@@ -17,6 +17,9 @@ export interface MapMarker {
   /** How deep the water is; only flooded places have one. */
   water?: WaterLevel;
   created: number;
+  /** Author IDs of who added it and who changed it last; items from before have none. */
+  addedBy?: string;
+  updatedBy?: string;
 }
 /** Saved by older versions; now loaded as places. */
 interface LegacyCheckpoint {
@@ -35,6 +38,9 @@ export interface PlannedRoute {
   points: Point[];
   created: number;
   draft: boolean;
+  /** Author IDs, as on a place. */
+  addedBy?: string;
+  updatedBy?: string;
 }
 export interface Layers {
   places: boolean;

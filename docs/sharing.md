@@ -25,6 +25,14 @@ Each destination remembers imported annotation identities. Repeated merges add n
 
 An annotation write reads the latest map and navigation together in one IndexedDB transaction. New-copy failures clean up that copy. Stale camera saves preserve imports that their window has not yet seen. Replace increments a local annotation revision so older saves cannot restore removed places or finished routes; a library-channel notification refreshes annotations in an open viewer.
 
+## Authors
+
+There are no accounts. On first use each device makes a random author ID (a UUID) and keeps it beside the Settings nickname. Adding a place or route signs it `addedBy` that ID; a saved change to its name, description, photos, icon, water level, position or points signs it `updatedBy`. The card then reads "Added by Léa#A32F · updated by Max#7KQ2". The four-character tag comes from the ID, in Crockford's letters and digits (no I, L, O or U), and tells apart people who share a name. Only names that are known appear: items from before authors, and people who never set a nickname, show no byline.
+
+The ID identifies an author; the nickname is only what's shown. Renaming yourself keeps your ID, and `since` records when the name was chosen, so receivers keep each author's newest name even when an older copy is relayed by someone else. Receivers learn names from every imported file. Names can't be edited on the receiving side.
+
+Backups carry the ID and every known name. A backup restored on a new phone gives that phone its owner's ID and nickname, unless the phone has already signed something with its own ID; then it keeps its own and only learns the names. Delete everything also deletes the ID. Nothing is signed cryptographically, so someone could copy another person's ID into a hand-made file.
+
 ## File format (version 2)
 
 The binary container is deliberately simple and does not compress or base64-encode an already compressed map image:
@@ -35,7 +43,7 @@ The binary container is deliberately simple and does not compress or base64-enco
 4. Place photo bytes, back to back in the order of the manifest's `photos` list.
 5. Optional original image bytes, exactly the length declared in the manifest.
 
-The manifest contains `format: "megamap"`, `version: 2`, map name, original pixel dimensions, lowercase SHA-256 `fingerprint`, arrays of `markers` and finished `routes`, an optional `photos` list (`id`, MIME `type`, `bytes`), optional image metadata (`name`, MIME `type`, `bytes`), and an optional sender name `from` (the nickname set in Settings, up to 100 characters, shown on import). Older apps ignore `from`. A marker's `photos` lists its photo IDs in display order; each photo in the file belongs to exactly one marker. Version 1 files, which have no photos and call the description `note`, are still read. Older apps reject version 2 files and ask to be updated. Items retain their source IDs. Import history uses `marker:<id>` and `route:<id>` keys and is not exported. Map display settings, saved camera, tile cache, and unfinished routes are not part of this version.
+The manifest contains `format: "megamap"`, `version: 2`, map name, original pixel dimensions, lowercase SHA-256 `fingerprint`, arrays of `markers` and finished `routes`, an optional `photos` list (`id`, MIME `type`, `bytes`), optional image metadata (`name`, MIME `type`, `bytes`), an optional sender name `from` (the nickname set in Settings, up to 100 characters, shown on import), the sender's author ID `fromId`, and `authors`, a list of `{ id, name, since }` for the sender and the people who added or updated the shared items. Markers and routes may carry `addedBy` and `updatedBy` author IDs. Older apps ignore all of these. A marker's `photos` lists its photo IDs in display order; each photo in the file belongs to exactly one marker. Version 1 files, which have no photos and call the description `note`, are still read. Older apps reject version 2 files and ask to be updated. Items retain their source IDs. Import history uses `marker:<id>` and `route:<id>` keys and is not exported. Map display settings, saved camera, tile cache, and unfinished routes are not part of this version.
 
 Files contain plain annotations and an optional original image. MegaMaps has no sharing server or account system.
 

@@ -10,7 +10,8 @@ import { loadNavigation } from "./navigation";
 import { loadOcr } from "./ocr";
 import { deleteStoredMap, payloadStore } from "./payloads";
 import { loadPhotos, putPhotos } from "./photos";
-import { loadSetting, saveSetting } from "./settings";
+import { loadSetting } from "./settings";
+import { adoptAuthor, isAuthorId, learnAuthors, loadAuthors, readAuthors, saveNickname, type Author } from "./authors";
 
 const MAGIC = "MEGABAK1";
 const HEADER_BYTES = 12;
@@ -37,6 +38,10 @@ export interface BackupManifest {
   version: 1;
   createdAt: number;
   shareName?: string;
+  /** The owner's author ID, carried to a new phone. */
+  authorId?: string;
+  /** Every author name this device knew. */
+  authors?: Author[];
   maps: BackupMap[];
 }
 export interface Backup {
@@ -94,8 +99,9 @@ export async function createBackup(now = new Date()) {
     parts.push(original, ...photos.values());
   }
   const shareName = await loadSetting("share-name");
+  const { me, known } = await loadAuthors();
   const manifest: BackupManifest = { format: "megamaps-backup", version: 1, createdAt: now.getTime(),
-    ...(shareName ? { shareName } : {}), maps };
+    ...(shareName ? { shareName } : {}), authorId: me, ...(known.size ? { authors: [...known.values()] } : {}), maps };
   const json = new TextEncoder().encode(JSON.stringify(manifest));
   const header = new Uint8Array(HEADER_BYTES);
   header.set(new TextEncoder().encode(MAGIC));
@@ -162,11 +168,15 @@ export function validateBackup(value: unknown): BackupManifest {
   if (!object(value) || value.format !== "megamaps-backup") invalid();
   if (value.version !== 1) throw new Error(t("This backup was made by a newer Mega Maps. Update the app and try again."));
   if (!integer(value.createdAt) || !Array.isArray(value.maps) ||
-      (value.shareName !== undefined && !text(value.shareName, 100))) invalid();
+      (value.shareName !== undefined && !text(value.shareName, 100)) ||
+      (value.authorId !== undefined && !isAuthorId(value.authorId))) invalid();
+  const authors = value.authors === undefined ? [] : readAuthors(value.authors, 100_000) ?? invalid();
   const maps = value.maps.map(validateMap);
   if (new Set(maps.map((map) => map.id)).size !== maps.length) invalid();
   return { format: "megamaps-backup", version: 1, createdAt: value.createdAt,
-    ...(value.shareName ? { shareName: value.shareName as string } : {}), maps };
+    ...(value.shareName ? { shareName: value.shareName as string } : {}),
+    ...(isAuthorId(value.authorId) ? { authorId: value.authorId } : {}),
+    ...(authors.length ? { authors } : {}), maps };
 }
 
 /** Parse the manifest and slice each map's files without loading them. */
@@ -240,7 +250,10 @@ export async function restoreBackup(
     }
     added++;
   }
-  if (backup.manifest.shareName && !(await loadSetting("share-name")))
-    await saveSetting("share-name", backup.manifest.shareName);
+  // The nickname comes along only with its owner's identity, so it never names someone else.
+  const adopted = !backup.manifest.authorId || await adoptAuthor(backup.manifest.authorId);
+  if (adopted && backup.manifest.shareName && !(await loadSetting("share-name")))
+    await saveNickname(backup.manifest.shareName);
+  await learnAuthors(backup.manifest.authors ?? []);
   return { added, kept: backup.manifest.maps.length - added };
 }

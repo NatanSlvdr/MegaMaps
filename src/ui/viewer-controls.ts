@@ -31,6 +31,8 @@ import { icons } from "./icons";
 import { nextName, plural } from "./format";
 import { t } from "../i18n";
 import { placeIcon } from "./place-icon";
+import { authorText } from "./author";
+import type { Authors } from "../storage/authors";
 import { popoverPosition } from "./popover-position";
 import {
   normalizeText,
@@ -145,6 +147,8 @@ export class ViewerControls {
     private map: MapRecord,
     private state: NavigationState,
     private onShare?: (item?: { kind: "marker" | "route"; id: string }) => void,
+    /** Who is adding and changing things here, and the names of everyone known. */
+    private authors?: Authors,
   ) {
     this.persistence = new NavigationPersistence(
       () => this.state,
@@ -236,6 +240,22 @@ export class ViewerControls {
     this.input("map-search").value = "";
     this.renderSearch();
     this.render();
+  }
+  /** Signs an item as added or last changed by this device's author. */
+  private sign(item: MapMarker | PlannedRoute, by: "addedBy" | "updatedBy") {
+    if (this.authors) item[by] = this.authors.me;
+  }
+  /** "Added by Léa#A32F · updated by Max#7KQ2", naming only authors whose name is known. */
+  private byline(item: MapMarker | PlannedRoute) {
+    const known = (id?: string) => id ? this.authors?.known.get(id) : undefined;
+    const added = known(item.addedBy);
+    const updated = item.updatedBy !== item.addedBy ? known(item.updatedBy) : undefined;
+    const document = this.root.ownerDocument;
+    return [
+      ...(added ? authorText(document, t("Added by {name}"), added) : []),
+      ...(added && updated ? [" · "] : []),
+      ...(updated ? authorText(document, added ? t("updated by {name}") : t("Updated by {name}"), updated) : []),
+    ];
   }
   private changed() {
     this.persistence.changed();
@@ -538,6 +558,7 @@ export class ViewerControls {
         route.draft = false;
         this.toast(t("{name} unchanged", { name: route.name }), "quiet");
       } else if (route.points.length >= 2) {
+        if (before && JSON.stringify(before) !== JSON.stringify(route.points)) this.sign(route, "updatedBy");
         route.draft = false;
         this.toast(t("{name} saved · {points}", { name: route.name, points: plural(route.points.length, "point") }), "done");
       } else {
@@ -608,6 +629,7 @@ export class ViewerControls {
     if (marker && from) {
       const moved = marker.point.x !== from.x || marker.point.y !== from.y;
       if (!keep) marker.point = from;
+      else if (moved) this.sign(marker, "updatedBy");
       if (moved) {
         this.toast(
           keep ? t("{name} moved", { name: marker.label }) : t("{name} not moved", { name: marker.label }),
@@ -689,10 +711,13 @@ export class ViewerControls {
     const waterLine = this.el("marker-detail-water");
     waterLine.textContent = water ? t("Water level: {level}", { level: waterLevels[water] }) : "";
     waterLine.hidden = !water;
+    const authors = this.el("marker-detail-authors");
+    authors.replaceChildren(...this.byline(item));
+    authors.hidden = !authors.childNodes.length;
     const details = this.el("marker-details");
     details.setAttribute("aria-label", place ? t("Place details") : t("Route details"));
     // With nothing to read, the card shrinks to its header.
-    details.hidden = !item.description && !count && !water;
+    details.hidden = !item.description && !count && !water && authors.hidden;
     details.scrollTop = 0;
     // Measured at its natural height, up to half the screen.
     details.dataset.expandable = "false";
@@ -768,6 +793,7 @@ export class ViewerControls {
     else delete route.description;
     if (this.formPhotos.length) route.photos = [...this.formPhotos];
     else delete route.photos;
+    if (!unchanged) this.sign(route, "updatedBy");
     const returnToDetails = this.viewingRoute === route.id && !this.moveAfterSave;
     if (!returnToDetails) this.dialog("marker-dialog").close();
     if (!unchanged) this.changed();
@@ -905,6 +931,7 @@ export class ViewerControls {
       const route = this.route();
       if (route)
         this.name(t("Rename route"), route.name, (name) => {
+          if (name !== route.name) this.sign(route, "updatedBy");
           route.name = name;
           this.changed();
         });
@@ -920,6 +947,7 @@ export class ViewerControls {
         created: Date.now(),
         draft: true,
       };
+      this.sign(route, "addedBy");
       this.state.routes.push(route);
       this.editRoute(route);
     });
@@ -1051,12 +1079,16 @@ export class ViewerControls {
         kind: this.markerKind(),
         ...(this.markerKind() === "flooded" && this.formWater ? { water: this.formWater } : {}),
         created: existing?.created ?? Date.now(),
+        ...(existing?.addedBy ? { addedBy: existing.addedBy } : {}),
+        ...(existing?.updatedBy ? { updatedBy: existing.updatedBy } : {}),
       };
       const unchanged = !!existing && existing.label === marker.label &&
         existing.description === marker.description && existing.kind === marker.kind &&
         existing.water === marker.water &&
         (existing.photos ?? []).join() === (marker.photos ?? []).join() &&
         existing.point.x === marker.point.x && existing.point.y === marker.point.y;
+      if (!existing) this.sign(marker, "addedBy");
+      else if (!unchanged) this.sign(marker, "updatedBy");
       // An edit keeps the place where it was in the Saved list.
       if (!existing) {
         this.state.markers.push(marker);

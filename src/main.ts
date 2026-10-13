@@ -27,6 +27,7 @@ import { initUpdateDialog, updateDialogMarkup } from "./ui/update-dialog";
 import { eraseDialogMarkup, initSettingsPage, restoreDialogMarkup, settingsMarkup } from "./ui/settings-page";
 import { backupDue, isBackupFile, restoreBackup, type Backup } from "./storage/backup";
 import { loadSetting } from "./storage/settings";
+import { loadAuthors } from "./storage/authors";
 import { language, locale, t } from "./i18n";
 import { preference } from "./preferences";
 import { importAnnotations, importNewCopy } from "./sharing/storage";
@@ -314,10 +315,10 @@ async function openMap(map: MapRecord) {
     // Reopening immediately must read the completed save, not the last throttle tick.
     await pendingViewSave;
     if (version !== openVersion) return;
-    const state = await loadNavigation(map.id);
+    const [state, authors] = await Promise.all([loadNavigation(map.id), loadAuthors().catch(() => undefined)]);
     if (version !== openVersion) return;
     void prunePhotos(map.id).catch(() => {});
-    controls = new ViewerControls(viewerSection, map, state, (item) => { void shareMap(map, item); });
+    controls = new ViewerControls(viewerSection, map, state, (item) => { void shareMap(map, item); }, authors);
     // A broken map is a big error: say so once, not for every unreadable tile.
     let reported = false;
     viewer = new Viewer(

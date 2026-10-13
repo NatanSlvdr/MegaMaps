@@ -7,6 +7,7 @@ import { preference, setPreference, type Preferences } from "../preferences";
 import { backupDue, backupSummary, createBackup, readBackup, type Backup } from "../storage/backup";
 import { listMaps } from "../storage/database";
 import { loadSetting, saveSetting } from "../storage/settings";
+import { authorTag, loadAuthors, saveNickname } from "../storage/authors";
 
 const heading = (text: string) => `<h2 class="settings-heading">${text}</h2>`;
 
@@ -25,8 +26,8 @@ export const settingsMarkup = `<section id="settings" class="settings-page" aria
 <header class="page-header"><button type="button" class="page-back" id="settings-back" aria-label="${t("Back")}" title="${t("Back")}">${icons.arrow}</button><h1 id="settings-title">${t("Settings")}</h1></header>
 ${heading(t("Display"))}<div class="share-summary">${choice("language", icons.language, t("Language"), [["fr", "Français"], ["en", "English"]])}${choice("label-size", icons.labelSize, t("Map label size"), [["standard", t("Standard")], ["large", t("Large")]])}</div>
 ${note(t("Language changes menus and messages, not the names you typed. Large labels read better in the dark but cover more of the map."))}
-${heading(t("Sharing"))}<div class="share-summary"><label class="share-row"><span class="share-row-icon settings-icon">${icons.user}</span><span class="share-row-label">${t("Nickname")}</span><input id="settings-name" type="text" maxlength="100" autocomplete="nickname" enterkeyhint="done" placeholder="${t("Add one")}"></label></div>
-${note(t("Appears as “Shared by …” on maps you send."))}
+${heading(t("Sharing"))}<div class="share-summary"><label class="share-row"><span class="share-row-icon settings-icon">${icons.user}</span><span class="share-row-label">${t("Nickname")}</span><input id="settings-name" type="text" maxlength="100" autocomplete="nickname" enterkeyhint="done" placeholder="${t("Add one")}"><span class="author-tag" id="settings-tag"></span></label></div>
+${note(t("Appears on the places and routes you add and on maps you send. The code after it tells you apart from anyone with the same name."))}
 ${heading(t("Backup"))}<div class="share-summary">${row("settings-backup", icons.backup, t("Save a backup"))}${row("settings-restore", icons.restore, t("Restore a backup"), t("Adds maps from a .megabackup file and keeps the ones already here"))}</div>${note("", "backup-note")}<p class="settings-error" id="backup-error" role="alert" hidden></p><input type="file" id="restore-input" accept=".megabackup,application/octet-stream" hidden>
 ${heading(t("About"))}<div class="share-summary">${row("settings-update", icons.rotateRight, t("Check for updates"))}<div class="share-row"><span class="share-row-icon settings-icon">${icons.storage}</span><span class="share-row-label">${t("Storage")}</span><span class="share-row-value" id="settings-storage-status"></span></div></div>
 ${note(t("No accounts and no servers: your maps, places and photos stay on this device."))}
@@ -106,14 +107,16 @@ export function initSettingsPage(page: HTMLElement, dialogs: { restore: HTMLDial
     const current = ++version;
     showError();
     void prepareBackup(current);
-    const [shareName, lastBackup, maps, estimate] = await Promise.all([
+    const [shareName, authors, lastBackup, maps, estimate] = await Promise.all([
       loadSetting("share-name").catch(() => undefined),
+      loadAuthors().catch(() => undefined),
       loadSetting("last-backup").catch(() => undefined),
       listMaps().then((maps) => maps.filter((map) => map.status === "ready")).catch(() => []),
       navigator.storage?.estimate?.().catch(() => undefined),
     ]);
     if (current !== version) return;
     name.value = shareName ?? "";
+    part(page, "settings-tag").textContent = authors ? `#${authorTag(authors.me)}` : "";
     showLastBackup(lastBackup, backupDue(maps, lastBackup));
     status("settings-storage", estimate?.usage !== undefined ? formatBytes(estimate.usage) : t("Unknown"));
     status("settings-erase", maps.length ? t("{maps} on this device", { maps: plural(maps.length, "map") }) : t("Nothing saved yet"));
@@ -132,7 +135,7 @@ export function initSettingsPage(page: HTMLElement, dialogs: { restore: HTMLDial
     }
   });
 
-  name.addEventListener("input", () => void saveSetting("share-name", name.value.trim()));
+  name.addEventListener("input", () => void saveNickname(name.value.trim()));
   name.addEventListener("change", () => { name.value = name.value.trim(); });
   // Done on the keyboard closes it, as on a form.
   name.addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.isComposing) name.blur(); });

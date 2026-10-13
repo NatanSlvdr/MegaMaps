@@ -649,6 +649,10 @@ small {
 #settings-name::placeholder {
   color: var(--muted);
 }
+#settings-tag {
+  flex: none;
+  color: var(--muted);
+}
 @media (max-width: 360px) {
   .library-action {
     flex-direction: column;
@@ -2027,6 +2031,17 @@ dialog.place-card::backdrop {
   margin: 0 0 var(--space-12);
   color: var(--c);
   font-weight: 600;
+}
+/* Who added and last changed the item closes the details, quietly. */
+.place-detail-authors {
+  margin: var(--space-12) 0 0;
+  color: var(--muted);
+  font-size: var(--font-size-small);
+  overflow-wrap: anywhere;
+}
+/* The tag after a name tells apart people who share it; it stays in the background. */
+.author-tag {
+  opacity: 0.6;
 }
 .place-add {
   display: flex;

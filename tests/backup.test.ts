@@ -8,6 +8,7 @@ import { loadOcr, saveOcr } from "../src/storage/ocr";
 import { deleteAllData, deleteStoredMap, payloadStore } from "../src/storage/payloads";
 import { loadPhoto, savePhoto } from "../src/storage/photos";
 import { loadSetting, saveSetting } from "../src/storage/settings";
+import { loadAuthors, saveNickname } from "../src/storage/authors";
 import { defaultNavigation } from "../src/viewer/navigation";
 import type { MapRecord } from "../src/types";
 
@@ -113,4 +114,35 @@ test("deleting everything removes every map with its data and the saved settings
   assert.equal((await loadNavigation("west")).markers.length, 0);
   assert.equal(await loadSetting("share-name"), undefined);
   assert.equal(await loadSetting("last-backup"), undefined);
+});
+
+test("a backup moves its owner's identity to a new phone, but never over one already in use", async () => {
+  await deleteAllData();
+  await saveNickname("Léa");
+  const lea = (await loadAuthors()).me;
+  await saveMap(record("cellar", "cellar"));
+  await payloadStore("indexeddb").put("cellar", "original", image("cellar"));
+  await saveNavigation({ ...defaultNavigation("cellar"), markers: [{ id: "m", kind: "entrance", label: "Gate",
+    description: "", point: { x: 1, y: 2 }, created: 1, addedBy: lea }] });
+  const backup = await readBackup((await createBackup()).file);
+
+  // A new phone has its own ID from first launch, but nothing signed with it yet.
+  await deleteAllData();
+  assert.notEqual((await loadAuthors()).me, lea);
+  await restoreBackup(backup, () => {}, new AbortController().signal, create);
+  const restored = await loadAuthors();
+  assert.equal(restored.me, lea, "the restored places are still yours");
+  assert.equal(restored.known.get(lea)?.name, "Léa");
+
+  // Someone else's phone that already added a place keeps its own identity.
+  await deleteAllData();
+  const max = (await loadAuthors()).me;
+  await saveMap(record("attic", "attic"));
+  await saveNavigation({ ...defaultNavigation("attic"), markers: [{ id: "n", kind: "entrance", label: "Hatch",
+    description: "", point: { x: 1, y: 2 }, created: 1, addedBy: max }] });
+  await restoreBackup(backup, () => {}, new AbortController().signal, create);
+  const kept = await loadAuthors();
+  assert.equal(kept.me, max);
+  assert.equal(await loadSetting("share-name"), undefined, "nor does it take the backup's nickname");
+  assert.equal(kept.known.get(lea)?.name, "Léa", "names in the backup are still learned");
 });

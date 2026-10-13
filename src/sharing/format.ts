@@ -3,6 +3,7 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
 import { MAX_FILE_BYTES, MAX_PIXELS } from "../types";
 import { readHeader } from "../processing/headers";
+import { isAuthorId, readAuthors, type Author } from "../storage/authors";
 import { isWaterLevel, legacyMarkerKinds, markerKinds, normalizeMarkerKind, NORTH_MAX, NORTH_MIN, type MapMarker, type PlannedRoute } from "../viewer/navigation";
 
 export const SHARE_MIME = "application/octet-stream";
@@ -14,6 +15,7 @@ const MAX_POINTS = 100_000;
 const MAX_PHOTOS = 2_000;
 const MAX_PHOTO_BYTES = 16 * 1024 * 1024;
 const MAX_PHOTOS_PER_ITEM = 50;
+const MAX_AUTHORS = 1_000;
 const PHOTO_TYPES = ["image/png", "image/jpeg", "image/webp"];
 export interface SharePhoto { id: string; type: string; bytes: number }
 export interface ShareManifest {
@@ -29,6 +31,10 @@ export interface ShareManifest {
   northOffset?: number;
   /** The sender's name from their settings, when they gave one. */
   from?: string;
+  /** The sender's author ID; their name is in `authors`. */
+  fromId?: string;
+  /** Names for the sender and for the authors of the items in this file. */
+  authors?: Author[];
 }
 export interface SharedMap {
   manifest: ShareManifest;
@@ -93,7 +99,11 @@ export function validateManifest(value: unknown): ShareManifest {
     const key = `${kind}:${value.id}`;
     if (ids.has(key)) invalid();
     ids.add(key);
-    return { id: value.id, created: value.created };
+    if ((value.addedBy !== undefined && !isAuthorId(value.addedBy)) ||
+        (value.updatedBy !== undefined && !isAuthorId(value.updatedBy))) invalid();
+    return { id: value.id, created: value.created,
+      ...(value.addedBy ? { addedBy: value.addedBy as string } : {}),
+      ...(value.updatedBy ? { updatedBy: value.updatedBy as string } : {}) };
   };
   let photos: SharePhoto[] = [];
   if (value.photos !== undefined) {
@@ -152,13 +162,17 @@ export function validateManifest(value: unknown): ShareManifest {
   const north = value.northOffset;
   if (north !== undefined && !integer(north, NORTH_MIN, NORTH_MAX)) invalid();
   if (value.from !== undefined && !name(value.from, 100)) invalid();
+  if (value.fromId !== undefined && !isAuthorId(value.fromId)) invalid();
+  const authors = value.authors === undefined ? [] : readAuthors(value.authors, MAX_AUTHORS) ?? invalid();
   if (!image && markers.length + routes.length === 0)
     throw new Error(t("Select at least one place or route, or include the map image."));
   return { format: "megamap", version: 3,
     map: { name: map.name, width: map.width, height: map.height, fingerprint: map.fingerprint },
     ...(image ? { image } : {}), markers, routes, ...(photos.length ? { photos } : {}),
     ...(north !== undefined ? { northOffset: north } : {}),
-    ...(typeof value.from === "string" ? { from: value.from.trim() } : {}) };
+    ...(typeof value.from === "string" ? { from: value.from.trim() } : {}),
+    ...(isAuthorId(value.fromId) ? { fromId: value.fromId } : {}),
+    ...(authors.length ? { authors } : {}) };
 }
 const photoBytes = (manifest: ShareManifest) =>
   (manifest.photos ?? []).reduce((total, photo) => total + photo.bytes, 0);

@@ -6,7 +6,7 @@ import { defaultNavigation, normalizeNavigation, type MapMarker, type Navigation
 import { importMap } from "../processing/import";
 import { readHeader } from "../processing/headers";
 import { loadPhotos, putPhotos } from "../storage/photos";
-import { loadSetting } from "../storage/settings";
+import { loadAuthors, rememberAuthors } from "../storage/authors";
 import { mergeAnnotations, replaceAnnotations } from "./annotations";
 import { fingerprint, encodeShare, shareFilename, verifyImage, type SharedMap, type ShareManifest } from "./format";
 
@@ -58,7 +58,7 @@ export async function prepareExport(map: MapRecord, state: NavigationState) {
   const image = { name: `map.${extension}`, type: `image/${header.format}`, bytes: original.size };
   const routes = state.routes.filter((route) => !route.draft && route.points.length >= 2);
   const photos = await loadPhotos(map.id, [...state.markers, ...routes].flatMap((item) => item.photos ?? []));
-  const from = (await loadSetting("share-name"))?.trim();
+  const authors = await loadAuthors();
   // A photo missing from storage is dropped instead of breaking the share.
   const stored = <T extends MapMarker | PlannedRoute>(item: T) => {
     const copy = structuredClone(item);
@@ -73,7 +73,7 @@ export async function prepareExport(map: MapRecord, state: NavigationState) {
     photos,
     routes: routes.map(stored),
     northOffset: state.northOffset,
-    from,
+    authors,
     image, original,
   };
 }
@@ -87,12 +87,18 @@ export function exportFile(prepared: PreparedExport, selection: ShareSelection) 
     const blob = prepared.photos.get(id)!;
     return { id, type: blob.type || "image/jpeg", bytes: blob.size };
   });
+  const { me, known } = prepared.authors;
+  const sender = known.get(me);
+  // Names travel only for the people this file mentions.
+  const mentioned = new Set([me, ...[...chosen, ...chosenRoutes].flatMap((item) => [item.addedBy, item.updatedBy])]);
+  const authors = [...known.values()].filter((author) => mentioned.has(author.id));
   const manifest: ShareManifest = { format: "megamap", version: 3, map: prepared.map,
     markers: chosen,
     routes: chosenRoutes,
     ...(photos.length ? { photos } : {}),
     ...(prepared.northOffset ? { northOffset: prepared.northOffset } : {}),
-    ...(prepared.from ? { from: prepared.from } : {}),
+    ...(sender ? { from: sender.name, fromId: me } : {}),
+    ...(authors.length ? { authors } : {}),
     ...(selection.includeImage ? { image: prepared.image } : {}) };
   return new File([encodeShare(manifest, selection.includeImage ? prepared.original : undefined, prepared.photos)],
     shareFilename(prepared.map.name), { type: "application/octet-stream" });
@@ -108,7 +114,7 @@ export async function importAnnotations(
   const db = await database();
   signal?.throwIfAborted();
   return new Promise<{ added: number; skipped: number; removed: number }>((resolve, reject) => {
-    const tx = db.transaction(["maps", "navigation", "photos"], "readwrite");
+    const tx = db.transaction(["maps", "navigation", "photos", "settings"], "readwrite");
     const abort = () => tx.abort();
     signal?.addEventListener("abort", abort, { once: true });
     const finish = () => signal?.removeEventListener("abort", abort);
@@ -133,6 +139,7 @@ export async function importAnnotations(
       // Only places and routes that were added bring their photos along.
       const used = new Set([...next.state.markers, ...next.state.routes].flatMap((item) => item.photos ?? []));
       putPhotos(tx, mapId, new Map([...photos].filter(([id]) => used.has(id))));
+      rememberAuthors(tx.objectStore("settings"), manifest.authors ?? []);
     };
     tx.oncomplete = () => { finish(); resolve(result); };
     tx.onabort = () => {

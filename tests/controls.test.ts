@@ -8,6 +8,7 @@ import { defaultNavigation, type PlannedRoute } from "../src/viewer/navigation";
 import { saveMap } from "../src/storage/database";
 import { loadNavigation } from "../src/storage/navigation";
 import { savePhoto } from "../src/storage/photos";
+import { authorTag } from "../src/storage/authors";
 import type { Point } from "../src/viewer/camera";
 import type { MapRecord } from "../src/types";
 import type { MapSearchMatch } from "../src/viewer/map-search";
@@ -1376,6 +1377,74 @@ test("a flooded place's water level shows beside its pin and is picked in the ed
     assert.equal(state.markers[0]!.water, undefined, "a place that is no longer flooded drops its level");
     assert.equal(el("marker-detail-water").hidden, true);
     assert.equal(el("marker-list").querySelector(".water-gauge"), null);
+  } finally {
+    await controls.dispose();
+  }
+});
+
+test("a place says who added and last updated it, and edits sign it with your identity", async () => {
+  const { window, document } = parseHTML(
+    `<html><body><section id="viewer">${viewerMarkup}</section></body></html>`,
+  );
+  Object.defineProperty(globalThis, "document", { value: document, configurable: true });
+  Object.defineProperty(globalThis, "window", { value: window, configurable: true });
+  for (const dialog of document.querySelectorAll("dialog")) {
+    Object.defineProperties(dialog, {
+      show: { value: () => dialog.setAttribute("open", "") },
+      showModal: { value: () => dialog.setAttribute("open", "") },
+      close: { value: () => {
+        if (!dialog.hasAttribute("open")) return;
+        dialog.removeAttribute("open");
+        dialog.dispatchEvent(new window.Event("close"));
+      } },
+    });
+  }
+  const root = document.querySelector<HTMLElement>("#viewer")!;
+  const map: MapRecord = {
+    id: "authors", name: "quarry.png", width: 1000, height: 1000,
+    bytes: 1, backend: "indexeddb", created: 0, status: "ready", levels: [],
+  };
+  const [me, lea, stranger] = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()];
+  const authors = { me, known: new Map([[me, { id: me, name: "Max", since: 1 }], [lea, { id: lea, name: "Léa", since: 1 }]]) };
+  const state = defaultNavigation(map.id);
+  state.markers = [
+    { id: "gate", point: { x: 500, y: 600 }, label: "Gate", description: "", kind: "entrance", created: 0, addedBy: lea },
+    { id: "old", point: { x: 100, y: 100 }, label: "Old", description: "", kind: "landmark", created: 0 },
+    { id: "unnamed", point: { x: 200, y: 200 }, label: "Unnamed", description: "", kind: "landmark", created: 0, addedBy: stranger },
+  ];
+  const controls = new ViewerControls(root, map, state, undefined, authors);
+  controls.attach({ setTool() {}, updateNavigation() {}, fitPoints() {}, jumpTo() {} });
+  const el = (id: string) => document.getElementById(id)!;
+  const save = () => el("marker-form").dispatchEvent(new window.Event("submit", { cancelable: true }));
+  const byline = () => el("marker-detail-authors").textContent;
+  try {
+    controls.options().onMarker(state.markers[0]!);
+    assert.equal(byline(), `Added by Léa#${authorTag(lea)}`);
+    assert.equal(el("marker-details").hidden, false, "the byline alone is worth reading");
+    assert.equal(el("marker-detail-authors").querySelector(".author-tag")!.textContent, `#${authorTag(lea)}`, "the tag is dimmed apart");
+
+    el("marker-edit").dispatchEvent(new window.Event("click"));
+    save();
+    assert.equal(state.markers[0]!.updatedBy, undefined, "saving without a change signs nothing");
+    el("marker-edit").dispatchEvent(new window.Event("click"));
+    (el("marker-label") as HTMLInputElement).value = "Iron gate";
+    save();
+    assert.deepEqual([state.markers[0]!.addedBy, state.markers[0]!.updatedBy], [lea, me]);
+    assert.equal(byline(), `Added by Léa#${authorTag(lea)} · updated by Max#${authorTag(me)}`);
+
+    controls.options().onMarker(state.markers[1]!);
+    assert.equal(el("marker-detail-authors").hidden, true, "places from before authors show nothing");
+    assert.equal(el("marker-details").hidden, true);
+    controls.options().onMarker(state.markers[2]!);
+    assert.equal(el("marker-detail-authors").hidden, true, "nor do people who never gave a name");
+
+    el("marker-cancel").dispatchEvent(new window.Event("click"));
+    controls.options().onLongPress!({ x: 300, y: 300 });
+    save();
+    const added = state.markers.at(-1)!;
+    assert.deepEqual([added.addedBy, added.updatedBy], [me, undefined]);
+    el("add-route").dispatchEvent(new window.Event("click"));
+    assert.equal(state.routes[0]!.addedBy, me);
   } finally {
     await controls.dispose();
   }

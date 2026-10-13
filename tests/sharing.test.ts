@@ -11,6 +11,7 @@ import { loadNavigation, saveNavigation } from "../src/storage/navigation";
 import { deleteStoredMap, payloadStore } from "../src/storage/payloads";
 import { loadPhoto, prunePhotos, savePhoto } from "../src/storage/photos";
 import { saveSetting } from "../src/storage/settings";
+import { authorTag, learnAuthors, loadAuthors, saveNickname } from "../src/storage/authors";
 import type { MapRecord } from "../src/types";
 
 // A container header is enough for image identity checks; decoding stays in the existing importer.
@@ -152,6 +153,54 @@ test("shares carry the sender's name from settings only when one is set", async 
   const { manifest } = await fixture();
   assert.throws(() => validateManifest({ ...manifest, from: "Alex\u0000" }), /invalid/);
   assert.throws(() => validateManifest({ ...manifest, from: "x".repeat(101) }), /invalid/);
+});
+
+test("shares carry who added and updated each item, and the receiver keeps everyone's latest name", async () => {
+  const source = record("authored-source");
+  await saveMap(source);
+  await payloadStore("indexeddb").put(source.id, "original", image());
+  await saveNickname("Léa");
+  const lea = (await loadAuthors()).me;
+  const max = crypto.randomUUID(), zoe = crypto.randomUUID();
+  await learnAuthors([{ id: max, name: "Max", since: 5 }, { id: zoe, name: "Zoé", since: 5 }]);
+  const { manifest } = await fixture();
+  const state = { ...defaultNavigation(source.id),
+    markers: [{ ...manifest.markers[0]!, addedBy: lea, updatedBy: max }, { ...manifest.markers[0]!, id: "zoe's", addedBy: zoe }] };
+  const shared = (await readShare(exportFile(await prepareExport(source, state),
+    { markers: ["place-a"], routes: [], includeImage: false }))).manifest;
+  assert.deepEqual([shared.markers[0]!.addedBy, shared.markers[0]!.updatedBy], [lea, max]);
+  assert.equal(shared.fromId, lea);
+  assert.deepEqual(shared.authors?.map((author) => author.name).sort(), ["Léa", "Max"], "only the people this file mentions");
+
+  // Another phone, which knows nobody yet.
+  await saveSetting("author-id", crypto.randomUUID());
+  await saveSetting("authors", []);
+  await saveNickname("");
+  const destination = { ...record("authored-destination"), fingerprint: shared.map.fingerprint };
+  await saveMap(destination);
+  await importAnnotations(destination.id, shared);
+  assert.equal((await loadNavigation(destination.id)).markers[0]!.updatedBy, max);
+  assert.equal((await loadAuthors()).known.get(max)?.name, "Max");
+
+  // A friend relaying an old copy can't undo a rename; a newer name replaces it.
+  const named = (name: string, since: number) => ({ ...shared, authors: [{ id: max, name, since }] });
+  await importAnnotations(destination.id, named("Maxime", 1));
+  assert.equal((await loadAuthors()).known.get(max)?.name, "Max");
+  await importAnnotations(destination.id, named("Maxou", 9));
+  assert.equal((await loadAuthors()).known.get(max)?.name, "Maxou");
+
+  assert.throws(() => validateManifest({ ...shared, fromId: "lea" }), /invalid/);
+  assert.throws(() => validateManifest({ ...shared, markers: [{ ...shared.markers[0], addedBy: 7 }] }), /invalid/);
+  assert.throws(() => validateManifest(named("", 9)), /invalid/);
+  assert.throws(() => validateManifest({ ...shared, authors: [...shared.authors!, shared.authors![0]] }), /invalid/);
+});
+
+test("an author's tag is four letters and digits that can't be misread", () => {
+  const tags = Array.from({ length: 200 }, () => authorTag(crypto.randomUUID()));
+  for (const tag of tags) assert.match(tag, /^[0-9A-HJKMNP-TV-Z]{4}$/);
+  assert.ok(new Set(tags).size > 190, "people with the same name are told apart");
+  const id = crypto.randomUUID();
+  assert.equal(authorTag(id), authorTag(id));
 });
 
 test("map north travels in shares, fills in an untuned map and never undoes local tuning", async () => {
